@@ -1,14 +1,13 @@
 #!/usr/bin/env node
-import React from "react";
 import { render } from "ink";
 
 const args = process.argv.slice(2);
 
 if (args.includes("--setup") || args.includes("-s")) {
-  // Run setup wizard
-  import("./setup.js");
+	// Run setup wizard
+	import("./setup.js");
 } else if (args.includes("--help") || args.includes("-h")) {
-  console.log(`
+	console.log(`
 sift - AI-powered email triage
 
 Usage:
@@ -24,24 +23,24 @@ Keyboard shortcuts (in app):
   r              Refresh
   q              Quit
 `);
-  process.exit(0);
+	process.exit(0);
 } else {
-  // Run main app
-  const { App } = await import("./app.js");
+	// Run main app
+	const { App } = await import("./app.js");
 
-  // Enter alternate screen buffer (like vim/less) - prevents scrollback pollution
-  process.stdout.write("\x1b[?1049h");
-  // Hide cursor
-  process.stdout.write("\x1b[?25l");
-  // Move cursor to top-left
-  process.stdout.write("\x1b[H");
+	// Enter alternate screen buffer (like vim/less) - prevents scrollback pollution
+	process.stdout.write("\x1b[?1049h");
+	// Hide cursor
+	process.stdout.write("\x1b[?25l");
+	// Move cursor to top-left
+	process.stdout.write("\x1b[H");
 
-  const { waitUntilExit } = render(<App />);
+	const { waitUntilExit } = render(<App />);
 
-  waitUntilExit().then(() => {
-    // Show cursor
-    process.stdout.write("\x1b[?25h");
-    // Exit alternate screen buffer - restores previous terminal content
-    process.stdout.write("\x1b[?1049l");
-  });
+	waitUntilExit().then(() => {
+		// Show cursor
+		process.stdout.write("\x1b[?25h");
+		// Exit alternate screen buffer - restores previous terminal content
+		process.stdout.write("\x1b[?1049l");
+	});
 }

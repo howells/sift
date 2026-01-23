@@ -1,0 +1,20 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
+	"extends": ["ultracite/biome/react"],
+	"files": {
+		"includes": ["src/**/*", "*.json", "*.ts", "*.tsx"]
+	},
+	"linter": {
+		"rules": {
+			"style": {
+				"noNonNullAssertion": "warn"
+			},
+			"correctness": {
+				"useExhaustiveDependencies": "warn"
+			},
+			"suspicious": {
+				"noExplicitAny": "warn"
+			}
+		}
+	}
+}

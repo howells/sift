@@ -1,111 +1,110 @@
-import { spawn } from "child_process";
+import { spawn } from "node:child_process";
 import Anthropic from "@anthropic-ai/sdk";
+import { cacheAnalysisBatch, getCachedAnalysis, hashEmail } from "./cache.js";
+import { isClaudeCliAvailable, loadConfig } from "./config.js";
 import type { Email } from "./gmail.js";
-import type { Todo, AnalysisResult } from "./types.js";
-import {
-  hashEmail,
-  getCachedAnalysis,
-  cacheAnalysisBatch,
-} from "./cache.js";
-import { loadConfig, isClaudeCliAvailable } from "./config.js";
+import type { AnalysisResult, Todo } from "./types.js";
 
 /**
  * Call LLM - tries Claude CLI first if available and preferred,
  * falls back to Anthropic API if API key is configured.
  */
 async function callLLM(prompt: string): Promise<string> {
-  const config = loadConfig();
-  const preferCli = config?.preferClaudeCli !== false;
-  const apiKey = config?.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
+	const config = loadConfig();
+	const preferCli = config?.preferClaudeCli !== false;
+	const apiKey = config?.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
 
-  // Try Claude CLI first if preferred
-  if (preferCli) {
-    const cliAvailable = await isClaudeCliAvailable();
-    if (cliAvailable) {
-      try {
-        return await callLLMCli(prompt);
-      } catch (error) {
-        // Fall through to API if CLI fails
-        if (!apiKey) throw error;
-      }
-    }
-  }
+	// Try Claude CLI first if preferred
+	if (preferCli) {
+		const cliAvailable = await isClaudeCliAvailable();
+		if (cliAvailable) {
+			try {
+				return await callLLMCli(prompt);
+			} catch (error) {
+				// Fall through to API if CLI fails
+				if (!apiKey) throw error;
+			}
+		}
+	}
 
-  // Use Anthropic API
-  if (apiKey) {
-    return await callAnthropicApi(prompt, apiKey);
-  }
+	// Use Anthropic API
+	if (apiKey) {
+		return await callAnthropicApi(prompt, apiKey);
+	}
 
-  throw new Error(
-    "No LLM available. Install Claude CLI or set ANTHROPIC_API_KEY."
-  );
+	throw new Error(
+		"No LLM available. Install Claude CLI or set ANTHROPIC_API_KEY.",
+	);
 }
 
 /**
  * Shell out to Claude Code CLI with data passed via stdin.
  */
 async function callLLMCli(prompt: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("claude", ["-p", "--output-format", "text"], {
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+	return new Promise((resolve, reject) => {
+		const child = spawn("claude", ["-p", "--output-format", "text"], {
+			stdio: ["pipe", "pipe", "pipe"],
+		});
 
-    let stdout = "";
-    let stderr = "";
+		let stdout = "";
+		let stderr = "";
 
-    child.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
+		child.stdout.on("data", (data) => {
+			stdout += data.toString();
+		});
 
-    child.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
+		child.stderr.on("data", (data) => {
+			stderr += data.toString();
+		});
 
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve(stdout.trim());
-      } else {
-        reject(new Error(stderr || `Claude CLI exited with code ${code}`));
-      }
-    });
+		child.on("close", (code) => {
+			if (code === 0) {
+				resolve(stdout.trim());
+			} else {
+				reject(new Error(stderr || `Claude CLI exited with code ${code}`));
+			}
+		});
 
-    child.on("error", reject);
+		child.on("error", reject);
 
-    child.stdin.write(prompt);
-    child.stdin.end();
-  });
+		child.stdin.write(prompt);
+		child.stdin.end();
+	});
 }
 
 /**
  * Call Anthropic API directly.
  */
-async function callAnthropicApi(prompt: string, apiKey: string): Promise<string> {
-  const client = new Anthropic({ apiKey });
+async function callAnthropicApi(
+	prompt: string,
+	apiKey: string,
+): Promise<string> {
+	const client = new Anthropic({ apiKey });
 
-  const message = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 4096,
-    messages: [
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
-  });
+	const message = await client.messages.create({
+		model: "claude-sonnet-4-20250514",
+		max_tokens: 4096,
+		messages: [
+			{
+				role: "user",
+				content: prompt,
+			},
+		],
+	});
 
-  const textBlock = message.content.find((block) => block.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("No text response from Anthropic API");
-  }
+	const textBlock = message.content.find((block) => block.type === "text");
+	if (!textBlock || textBlock.type !== "text") {
+		throw new Error("No text response from Anthropic API");
+	}
 
-  return textBlock.text;
+	return textBlock.text;
 }
 
 interface EmailWithMeta {
-  account: string;
-  group: string;
-  email: Email;
-  hash: string;
+	account: string;
+	group: string;
+	email: Email;
+	hash: string;
 }
 
 /**
@@ -113,73 +112,77 @@ interface EmailWithMeta {
  * Uses SQLite cache to avoid re-analyzing unchanged emails.
  */
 export async function analyzeEmails(
-  emails: { account: string; group: string; emails: Email[] }[],
-  today: Date = new Date(),
-  onProgress?: (cached: number, toAnalyze: number) => void
+	emails: { account: string; group: string; emails: Email[] }[],
+	today: Date = new Date(),
+	onProgress?: (cached: number, toAnalyze: number) => void,
 ): Promise<AnalysisResult> {
-  // Flatten and compute hashes
-  const allEmails: EmailWithMeta[] = emails.flatMap(({ account, group, emails }) =>
-    emails.map((e) => ({
-      account,
-      group,
-      email: e,
-      hash: hashEmail(e),
-    }))
-  );
+	// Flatten and compute hashes
+	const allEmails: EmailWithMeta[] = emails.flatMap(
+		({ account, group, emails }) =>
+			emails.map((e) => ({
+				account,
+				group,
+				email: e,
+				hash: hashEmail(e),
+			})),
+	);
 
-  // Check cache for each email
-  const cachedTodos: Todo[] = [];
-  const uncachedEmails: EmailWithMeta[] = [];
+	// Check cache for each email
+	const cachedTodos: Todo[] = [];
+	const uncachedEmails: EmailWithMeta[] = [];
 
-  for (const item of allEmails) {
-    const cached = getCachedAnalysis(item.email.id, item.hash);
-    if (cached) {
-      if (cached.isTodo && cached.todo) {
-        cachedTodos.push(cached.todo);
-      }
-      // Skip - already analyzed with same hash
-    } else {
-      uncachedEmails.push(item);
-    }
-  }
+	for (const item of allEmails) {
+		const cached = getCachedAnalysis(item.email.id, item.hash);
+		if (cached) {
+			if (cached.isTodo && cached.todo) {
+				cachedTodos.push(cached.todo);
+			}
+			// Skip - already analyzed with same hash
+		} else {
+			uncachedEmails.push(item);
+		}
+	}
 
-  // Report progress
-  onProgress?.(cachedTodos.length, uncachedEmails.length);
+	// Report progress
+	onProgress?.(cachedTodos.length, uncachedEmails.length);
 
-  // If everything is cached, return early
-  if (uncachedEmails.length === 0) {
-    return { todos: cachedTodos };
-  }
+	// If everything is cached, return early
+	if (uncachedEmails.length === 0) {
+		return { todos: cachedTodos };
+	}
 
-  // Process emails in batches to avoid context overflow
-  const BATCH_SIZE = 50;
-  const allNewTodos: Todo[] = [];
+	// Process emails in batches to avoid context overflow
+	const BATCH_SIZE = 50;
+	const allNewTodos: Todo[] = [];
 
-  for (let i = 0; i < uncachedEmails.length; i += BATCH_SIZE) {
-    const batch = uncachedEmails.slice(i, i + BATCH_SIZE);
-    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-    const totalBatches = Math.ceil(uncachedEmails.length / BATCH_SIZE);
+	for (let i = 0; i < uncachedEmails.length; i += BATCH_SIZE) {
+		const batch = uncachedEmails.slice(i, i + BATCH_SIZE);
+		const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+		const totalBatches = Math.ceil(uncachedEmails.length / BATCH_SIZE);
 
-    // Update progress for batches
-    if (totalBatches > 1) {
-      onProgress?.(cachedTodos.length + allNewTodos.length, uncachedEmails.length - i);
-    }
+		// Update progress for batches
+		if (totalBatches > 1) {
+			onProgress?.(
+				cachedTodos.length + allNewTodos.length,
+				uncachedEmails.length - i,
+			);
+		}
 
-    const emailSummaries = batch.map(({ account, group, email: e }) => ({
-      account,
-      group,
-      id: e.id,
-      threadId: e.threadId,
-      subject: e.subject,
-      from: e.from,
-      fromEmail: e.fromEmail,
-      date: e.date,
-      snippet: e.snippet,
-      isStarred: e.isStarred,
-      isUnread: e.isUnread,
-    }));
+		const emailSummaries = batch.map(({ account, group, email: e }) => ({
+			account,
+			group,
+			id: e.id,
+			threadId: e.threadId,
+			subject: e.subject,
+			from: e.from,
+			fromEmail: e.fromEmail,
+			date: e.date,
+			snippet: e.snippet,
+			isStarred: e.isStarred,
+			isUnread: e.isUnread,
+		}));
 
-    const prompt = `You are analyzing emails to extract actionable todos. Today is ${today.toISOString().split("T")[0]}.
+		const prompt = `You are analyzing emails to extract actionable todos. Today is ${today.toISOString().split("T")[0]}.
 
 For each email, determine:
 1. Does this require a response or action from the user? (yes/no)
@@ -241,54 +244,56 @@ Respond with ONLY valid JSON in this exact format:
   ]
 }`;
 
-    const response = await callLLM(prompt);
+		const response = await callLLM(prompt);
 
-    // Extract JSON from response (Claude might add explanation text)
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("No valid JSON in Claude response");
-    }
+		// Extract JSON from response (Claude might add explanation text)
+		const jsonMatch = response.match(/\{[\s\S]*\}/);
+		if (!jsonMatch) {
+			throw new Error("No valid JSON in Claude response");
+		}
 
-    let batchTodos: Todo[];
-    try {
-      const result = JSON.parse(jsonMatch[0]) as AnalysisResult;
-      batchTodos = result.todos;
-    } catch {
-      throw new Error(`Failed to parse Claude response: ${response.slice(0, 200)}`);
-    }
+		let batchTodos: Todo[];
+		try {
+			const result = JSON.parse(jsonMatch[0]) as AnalysisResult;
+			batchTodos = result.todos;
+		} catch {
+			throw new Error(
+				`Failed to parse Claude response: ${response.slice(0, 200)}`,
+			);
+		}
 
-    // Build a map of emailId -> todo for quick lookup
-    const todosByEmailId = new Map<string, Todo>();
-    for (const todo of batchTodos) {
-      todosByEmailId.set(todo.emailId, todo);
-    }
+		// Build a map of emailId -> todo for quick lookup
+		const todosByEmailId = new Map<string, Todo>();
+		for (const todo of batchTodos) {
+			todosByEmailId.set(todo.emailId, todo);
+		}
 
-    // Cache this batch's results (both todos and non-todos)
-    const cacheEntries = batch.map((item) => {
-      const todo = todosByEmailId.get(item.email.id);
-      return {
-        emailId: item.email.id,
-        account: item.account,
-        threadId: item.email.threadId,
-        emailHash: item.hash,
-        isTodo: !!todo,
-        todo: todo || null,
-      };
-    });
+		// Cache this batch's results (both todos and non-todos)
+		const cacheEntries = batch.map((item) => {
+			const todo = todosByEmailId.get(item.email.id);
+			return {
+				emailId: item.email.id,
+				account: item.account,
+				threadId: item.email.threadId,
+				emailHash: item.hash,
+				isTodo: !!todo,
+				todo: todo || null,
+			};
+		});
 
-    cacheAnalysisBatch(cacheEntries);
-    allNewTodos.push(...batchTodos);
-  }
+		cacheAnalysisBatch(cacheEntries);
+		allNewTodos.push(...batchTodos);
+	}
 
-  // Combine cached and new todos
-  return { todos: [...cachedTodos, ...allNewTodos] };
+	// Combine cached and new todos
+	return { todos: [...cachedTodos, ...allNewTodos] };
 }
 
 /**
  * Translate natural language search to Gmail query syntax.
  */
 export async function translateSearch(query: string): Promise<string> {
-  const prompt = `Translate this natural language email search into Gmail query syntax.
+	const prompt = `Translate this natural language email search into Gmail query syntax.
 
 User query: "${query}"
 
@@ -308,8 +313,8 @@ Gmail query syntax examples:
 Respond with ONLY the Gmail query, nothing else. Example response:
 from:peter after:2024/09/01 before:2024/10/01`;
 
-  const response = await callLLM(prompt);
-  return response.trim();
+	const response = await callLLM(prompt);
+	return response.trim();
 }
 
 /**
@@ -317,13 +322,13 @@ from:peter after:2024/09/01 before:2024/10/01`;
  * Returns the action to take and any parameters.
  */
 export async function parseCommand(
-  command: string,
-  email: { subject: string; from: string; id: string }
+	command: string,
+	email: { subject: string; from: string; id: string },
 ): Promise<{
-  action: "forward" | "reply" | "archive" | "snooze" | "label" | "unknown";
-  params: Record<string, string>;
+	action: "forward" | "reply" | "archive" | "snooze" | "label" | "unknown";
+	params: Record<string, string>;
 }> {
-  const prompt = `Parse this email command and extract the action and parameters.
+	const prompt = `Parse this email command and extract the action and parameters.
 
 Command: "${command}"
 Email context: Subject "${email.subject}" from ${email.from}
@@ -341,15 +346,15 @@ Respond with ONLY valid JSON:
   "params": { "key": "value" }
 }`;
 
-  const response = await callLLM(prompt);
-  const jsonMatch = response.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    return { action: "unknown", params: {} };
-  }
+	const response = await callLLM(prompt);
+	const jsonMatch = response.match(/\{[\s\S]*\}/);
+	if (!jsonMatch) {
+		return { action: "unknown", params: {} };
+	}
 
-  try {
-    return JSON.parse(jsonMatch[0]);
-  } catch {
-    return { action: "unknown", params: {} };
-  }
+	try {
+		return JSON.parse(jsonMatch[0]);
+	} catch {
+		return { action: "unknown", params: {} };
+	}
 }
