@@ -8,8 +8,14 @@ export interface AccountConfig {
 	group: string;
 }
 
+export interface ReminderListConfig {
+	list: string; // Apple Reminders list name
+	group: string; // Account group to associate with
+}
+
 export interface SiftConfig {
 	accounts: AccountConfig[];
+	reminderLists?: ReminderListConfig[]; // Apple Reminders lists to show
 	anthropicApiKey?: string;
 	preferClaudeCli?: boolean; // If true, try claude CLI first, fall back to API
 }
@@ -73,6 +79,15 @@ export function googleCredentialsExist(): boolean {
 export function getAccountGroups(config: SiftConfig): string[] {
 	const groups = new Set(config.accounts.map((a) => a.group));
 	return Array.from(groups);
+}
+
+/**
+ * Get reminder lists from config
+ */
+export function getReminderLists(
+	config: SiftConfig,
+): ReminderListConfig[] | null {
+	return config.reminderLists ?? null;
 }
 
 /**

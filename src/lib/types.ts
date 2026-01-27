@@ -1,10 +1,13 @@
 export type Urgency = "overdue" | "this_week" | "when_you_can";
 export type ReminderState = "none" | "pending" | "completed";
+export type TodoSource = "email" | "reminder";
 
 export interface Todo {
+	source: TodoSource;
 	id: string;
-	emailId: string;
-	threadId: string;
+	emailId?: string; // Only for email-sourced todos
+	threadId?: string; // Only for email-sourced todos
+	reminderId?: string; // Only for reminder-sourced todos
 	account: string;
 	group: string;
 	subject: string;

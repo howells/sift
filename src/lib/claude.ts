@@ -135,7 +135,8 @@ export async function analyzeEmails(
 		const cached = getCachedAnalysis(item.email.id, item.hash);
 		if (cached) {
 			if (cached.isTodo && cached.todo) {
-				cachedTodos.push(cached.todo);
+				// Ensure cached todos have source field (backwards compatibility)
+				cachedTodos.push({ ...cached.todo, source: "email" });
 			}
 			// Skip - already analyzed with same hash
 		} else {
@@ -225,6 +226,7 @@ Respond with ONLY valid JSON in this exact format:
 {
   "todos": [
     {
+      "source": "email",
       "id": "<generate a unique id>",
       "emailId": "<COPY the 'id' field from the input email EXACTLY>",
       "threadId": "<COPY the 'threadId' field from the input email EXACTLY>",
@@ -255,7 +257,8 @@ Respond with ONLY valid JSON in this exact format:
 		let batchTodos: Todo[];
 		try {
 			const result = JSON.parse(jsonMatch[0]) as AnalysisResult;
-			batchTodos = result.todos;
+			// Ensure all todos have source field
+			batchTodos = result.todos.map((todo) => ({ ...todo, source: "email" }));
 		} catch {
 			throw new Error(
 				`Failed to parse Claude response: ${response.slice(0, 200)}`,
@@ -265,7 +268,9 @@ Respond with ONLY valid JSON in this exact format:
 		// Build a map of emailId -> todo for quick lookup
 		const todosByEmailId = new Map<string, Todo>();
 		for (const todo of batchTodos) {
-			todosByEmailId.set(todo.emailId, todo);
+			if (todo.emailId) {
+				todosByEmailId.set(todo.emailId, todo);
+			}
 		}
 
 		// Cache this batch's results (both todos and non-todos)
@@ -356,5 +361,74 @@ Respond with ONLY valid JSON:
 		return JSON.parse(jsonMatch[0]);
 	} catch {
 		return { action: "unknown", params: {} };
+	}
+}
+
+export interface ReminderContent {
+	title: string; // Short actionable title (max 60 chars)
+	notes: string; // Context and details
+}
+
+/**
+ * Generate a specific, actionable reminder from an email thread.
+ * Uses Claude to understand what actually needs to be done.
+ */
+export async function generateReminderFromEmail(
+	thread: {
+		subject: string;
+		messages: { from: string; date: string; body: string }[];
+	},
+	existingSummary: string,
+): Promise<ReminderContent> {
+	// Truncate bodies to avoid context overflow
+	const truncatedMessages = thread.messages.map((m) => ({
+		from: m.from,
+		date: m.date,
+		body: m.body.slice(0, 1500),
+	}));
+
+	const prompt = `Analyze this email thread and create a specific, actionable reminder.
+
+Subject: ${thread.subject}
+
+Messages (most recent last):
+${truncatedMessages.map((m) => `--- ${m.from} (${m.date}) ---\n${m.body}`).join("\n\n")}
+
+Current summary: "${existingSummary}"
+
+Create a reminder that tells me EXACTLY what I need to do. Be specific.
+
+Bad examples:
+- "Check email from John" (too vague)
+- "Reply to thread" (what should I say?)
+- "Follow up" (on what?)
+
+Good examples:
+- "Reply to John: confirm meeting for Thursday 2pm"
+- "Send Sarah the Q4 budget spreadsheet she requested"
+- "Review and approve Mike's PR for auth changes"
+- "Book flights for NYC trip (March 15-18)"
+
+Respond with ONLY valid JSON:
+{
+  "title": "Short action (max 60 chars, starts with verb)",
+  "notes": "Additional context: key details, deadlines, what they're waiting for"
+}`;
+
+	try {
+		const response = await callLLM(prompt);
+		const jsonMatch = response.match(/\{[\s\S]*\}/);
+		if (!jsonMatch) {
+			return { title: existingSummary, notes: "" };
+		}
+
+		const result = JSON.parse(jsonMatch[0]) as ReminderContent;
+		// Ensure title isn't too long
+		return {
+			title: result.title.slice(0, 60),
+			notes: result.notes,
+		};
+	} catch {
+		return { title: existingSummary, notes: "" };
 	}
 }
