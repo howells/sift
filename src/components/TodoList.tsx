@@ -115,6 +115,7 @@ export function TodoList({
 				if (item.type === "header") {
 					return (
 						<Box key={`header-${item.title}`} marginTop={i > 0 ? 1 : 0}>
+							<Text>{"  "}</Text>
 							<Text color={item.color as any} bold>
 								{item.icon} {item.title} ({item.count})
 							</Text>

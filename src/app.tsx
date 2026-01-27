@@ -10,30 +10,37 @@ import {
 	getAuthenticatedClient,
 } from "./lib/auth.js";
 import { removeCachedAnalysis } from "./lib/cache.js";
-import { analyzeEmails } from "./lib/claude.js";
-import { configExists } from "./lib/config.js";
+import { analyzeEmails, generateReminderFromEmail } from "./lib/claude.js";
+import { configExists, getReminderLists, loadConfig } from "./lib/config.js";
 import { type Email, GmailClient } from "./lib/gmail.js";
 import {
 	completeReminderByEmail,
+	completeReminderById,
 	createReminderFromTodo,
+	fetchPendingReminders,
 	getEmailReminderStates,
+	openRemindersApp,
 } from "./lib/reminders.js";
 import type { ReminderState, Todo, View } from "./lib/types.js";
 
 export function App() {
 	const { exit } = useApp();
 	const { stdout } = useStdout();
-	const terminalHeight = stdout?.rows || 24;
+	// Stay 1 row under terminal height so Ink uses efficient in-place
+	// rendering (log-update) instead of clearTerminal + full redraw
+	const terminalHeight = (stdout?.rows || 24) - 1;
 
 	const [view, setView] = useState<View>("main");
 	const [todos, setTodos] = useState<Todo[]>([]);
 	const [backlog, setBacklog] = useState<Todo[]>([]);
 	const [selectedIndex, setSelectedIndex] = useState(0);
 	const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
-	const [isLoading, setIsLoading] = useState(true);
-	const [loadingMessage, setLoadingMessage] = useState("Initializing...");
-	const [loadingStep, setLoadingStep] = useState(1);
-	const [loadingDetail, setLoadingDetail] = useState<string | undefined>();
+	const [loading, setLoading] = useState<{
+		active: boolean;
+		message: string;
+		step: number;
+		detail?: string;
+	}>({ active: true, message: "Initializing...", step: 1 });
 	const [error, setError] = useState<string | null>(null);
 	const [gmailClients, setGmailClients] = useState<Map<string, GmailClient>>(
 		new Map(),
@@ -51,18 +58,20 @@ export function App() {
 				// Check config exists
 				if (!configExists()) {
 					setError("No config found. Run 'sift --setup' to configure.");
-					setIsLoading(false);
+					setLoading((l) => ({ ...l, active: false }));
 					return;
 				}
 
 				// Step 1: Connect to accounts
-				setLoadingStep(1);
-				setLoadingMessage("Connecting to Gmail");
+				setLoading({ active: true, message: "Connecting to Gmail", step: 1 });
 				const clients = new Map<string, GmailClient>();
 
 				for (let i = 0; i < accounts.length; i++) {
 					const account = accounts[i];
-					setLoadingDetail(`${account.name} (${i + 1}/${accounts.length})`);
+					setLoading((l) => ({
+						...l,
+						detail: `${account.name} (${i + 1}/${accounts.length})`,
+					}));
 					const auth = await getAuthenticatedClient(account.name);
 					clients.set(account.name, new GmailClient(auth, account.email));
 				}
@@ -70,15 +79,17 @@ export function App() {
 				setGmailClients(clients);
 
 				// Step 2: Fetch emails
-				setLoadingStep(2);
-				setLoadingMessage("Fetching emails");
+				setLoading({ active: true, message: "Fetching emails", step: 2 });
 				const allEmails: { account: string; group: string; emails: Email[] }[] =
 					[];
 				let totalEmails = 0;
 
 				for (let i = 0; i < accounts.length; i++) {
 					const account = accounts[i];
-					setLoadingDetail(`${account.name} (${i + 1}/${accounts.length})`);
+					setLoading((l) => ({
+						...l,
+						detail: `${account.name} (${i + 1}/${accounts.length})`,
+					}));
 					const client = clients.get(account.name)!;
 					const starred = await client.listStarred(200);
 					const unread = await client.listUnread(100);
@@ -100,22 +111,25 @@ export function App() {
 				}
 
 				// Step 3: Analyze with Claude
-				setLoadingStep(3);
-				setLoadingMessage("Analyzing with Claude");
-				setLoadingDetail(`${totalEmails} emails to check`);
+				setLoading({
+					active: true,
+					message: "Analyzing with Claude",
+					step: 3,
+					detail: `${totalEmails} emails to check`,
+				});
 
 				// Analyze with Claude (uses cache for unchanged emails)
 				const result = await analyzeEmails(
 					allEmails,
 					new Date(),
 					(cached, toAnalyze) => {
-						if (toAnalyze === 0) {
-							setLoadingDetail(`All ${cached} from cache`);
-						} else if (cached > 0) {
-							setLoadingDetail(`${cached} cached, analyzing ${toAnalyze} new`);
-						} else {
-							setLoadingDetail(`Analyzing ${toAnalyze} emails`);
-						}
+						const detail =
+							toAnalyze === 0
+								? `All ${cached} from cache`
+								: cached > 0
+									? `${cached} cached, analyzing ${toAnalyze} new`
+									: `Analyzing ${toAnalyze} emails`;
+						setLoading((l) => ({ ...l, detail }));
 					},
 				);
 
@@ -126,15 +140,22 @@ export function App() {
 				const active: Todo[] = [];
 				const old: Todo[] = [];
 
+				// Get config for reminder lists
+				const config = loadConfig();
+				const reminderLists = config ? getReminderLists(config) : null;
+
 				// Get reminder states from Apple Reminders (single source of truth)
-				const reminderStates = getEmailReminderStates("Work");
+				// Use first reminder list or default to "Work"
+				const defaultList = reminderLists?.[0]?.list ?? "Work";
+				const reminderStates = getEmailReminderStates(defaultList);
 
 				for (const todo of result.todos) {
 					// Hydrate reminder state from Apple Reminders
 					const todoWithReminder = {
 						...todo,
 						reminderState:
-							reminderStates.get(todo.emailId) ?? ("none" as ReminderState),
+							reminderStates.get(todo.emailId ?? "") ??
+							("none" as ReminderState),
 					};
 
 					const todoDate = new Date(todo.date);
@@ -145,12 +166,18 @@ export function App() {
 					}
 				}
 
+				// Fetch and merge Apple Reminders if configured
+				if (reminderLists && reminderLists.length > 0) {
+					const reminderTodos = fetchPendingReminders(reminderLists);
+					active.push(...reminderTodos);
+				}
+
 				setTodos(active);
 				setBacklog(old);
-				setIsLoading(false);
+				setLoading((l) => ({ ...l, active: false }));
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Unknown error");
-				setIsLoading(false);
+				setLoading((l) => ({ ...l, active: false }));
 			}
 		}
 
@@ -173,7 +200,7 @@ export function App() {
 
 	// Keyboard handling
 	useInput((input, key) => {
-		if (isLoading) return;
+		if (loading.active) return;
 
 		// Navigation
 		if (key.upArrow || input === "k") {
@@ -203,61 +230,93 @@ export function App() {
 			setSelectedIndex(0);
 		}
 
-		// Open in browser
+		// Open in browser (email) or Reminders app (reminder)
 		if (key.return && currentList[selectedIndex]) {
 			const todo = currentList[selectedIndex];
-			const client = gmailClients.get(todo.account);
-			if (client) {
-				client.openInBrowser(todo.threadId);
+			if (todo.source === "reminder") {
+				openRemindersApp();
+			} else if (todo.threadId) {
+				const client = gmailClients.get(todo.account);
+				if (client) {
+					client.openInBrowser(todo.threadId);
+				}
 			}
 		}
 
 		// Done (unstar + mark read + remove from cache + complete reminder)
 		if (input === "d" && currentList[selectedIndex]) {
 			const todo = currentList[selectedIndex];
-			const client = gmailClients.get(todo.account);
-			if (client) {
-				// Complete associated reminder if it exists
-				if (todo.reminderState !== "none") {
-					completeReminderByEmail(todo.emailId, "Work");
-				}
 
-				Promise.all([
-					client.unstar(todo.emailId),
-					client.markRead(todo.emailId),
-				]).then(() => {
-					removeCachedAnalysis(todo.emailId);
-					// Calculate new list length after removal for proper index clamping
-					const newListLength = currentList.filter(
-						(t) => t.id !== todo.id,
-					).length;
-					if (view === "backlog") {
-						setBacklog((prev) => prev.filter((t) => t.id !== todo.id));
-					} else {
-						setTodos((prev) => {
-							const newTodos = prev.filter((t) => t.id !== todo.id);
-							// Auto-refresh when list gets low (< 5 items)
-							if (newTodos.length < 5 && !isLoading) {
-								setTimeout(() => {
-									setIsLoading(true);
-									setLoadingStep(1);
-									setLoadingMessage("Fetching more emails");
-									setLoadingDetail(undefined);
-									setRefreshTrigger((n) => n + 1);
-								}, 100);
-							}
-							return newTodos;
-						});
+			// Handle reminder-sourced todos
+			if (todo.source === "reminder" && todo.reminderId) {
+				completeReminderById(todo.reminderId);
+				const newListLength = currentList.filter(
+					(t) => t.id !== todo.id,
+				).length;
+				if (view === "backlog") {
+					setBacklog((prev) => prev.filter((t) => t.id !== todo.id));
+				} else {
+					setTodos((prev) => prev.filter((t) => t.id !== todo.id));
+				}
+				setSelectedIndex((i) => Math.min(i, Math.max(0, newListLength - 1)));
+				return;
+			}
+
+			// Handle email-sourced todos
+			if (todo.source === "email" && todo.emailId) {
+				const emailId = todo.emailId; // Capture for closure
+				const client = gmailClients.get(todo.account);
+				if (client) {
+					// Complete associated reminder if it exists
+					if (todo.reminderState !== "none") {
+						const config = loadConfig();
+						const reminderLists = config ? getReminderLists(config) : null;
+						const defaultList = reminderLists?.[0]?.list ?? "Work";
+						completeReminderByEmail(emailId, defaultList);
 					}
-					setSelectedIndex((i) => Math.min(i, Math.max(0, newListLength - 1)));
-				});
+
+					Promise.all([client.unstar(emailId), client.markRead(emailId)]).then(
+						() => {
+							removeCachedAnalysis(emailId);
+							// Calculate new list length after removal for proper index clamping
+							const newListLength = currentList.filter(
+								(t) => t.id !== todo.id,
+							).length;
+							if (view === "backlog") {
+								setBacklog((prev) => prev.filter((t) => t.id !== todo.id));
+							} else {
+								setTodos((prev) => {
+									const newTodos = prev.filter((t) => t.id !== todo.id);
+									// Auto-refresh when list gets low (< 5 items)
+									if (newTodos.length < 5 && !loading.active) {
+										setTimeout(() => {
+											setLoading({
+												active: true,
+												message: "Fetching more emails",
+												step: 1,
+											});
+											setRefreshTrigger((n) => n + 1);
+										}, 100);
+									}
+									return newTodos;
+								});
+							}
+							setSelectedIndex((i) =>
+								Math.min(i, Math.max(0, newListLength - 1)),
+							);
+						},
+					);
+				}
 			}
 		}
 
-		// Star (save for later)
+		// Star (save for later) - only for email-sourced todos
 		if (input === "s" && currentList[selectedIndex]) {
 			const todo = currentList[selectedIndex];
-			if (!todo.isStarred) {
+			// Skip for reminder-sourced items (no email to star)
+			if (todo.source === "reminder") return;
+
+			if (!todo.isStarred && todo.emailId) {
 				const client = gmailClients.get(todo.account);
 				if (client) {
 					client.star(todo.emailId).then(() => {
@@ -274,38 +333,83 @@ export function App() {
 			}
 		}
 
-		// Create Apple Reminder (t = "to-do")
+		// Create Apple Reminder (t = "to-do") - only for email-sourced todos
 		if (input === "t" && currentList[selectedIndex]) {
 			const todo = currentList[selectedIndex];
+
+			// Skip for reminder-sourced items (already a reminder)
+			if (todo.source === "reminder") return;
 
 			// Already has reminder (pending or completed) - no action
 			if (todo.reminderState !== "none") {
 				return;
 			}
 
-			const result = createReminderFromTodo(todo, "Work");
+			// Get config for reminder list
+			const config = loadConfig();
+			const reminderLists = config ? getReminderLists(config) : null;
+			const defaultList = reminderLists?.[0]?.list ?? "Work";
 
-			if (result.success) {
-				// Update local state to show ☐ indicator
-				const updateTodo = (t: Todo) =>
+			// Async: fetch thread, generate with Claude, create reminder
+			(async () => {
+				const client = gmailClients.get(todo.account);
+				if (!client || !todo.threadId) {
+					// Fall back to simple reminder
+					const result = createReminderFromTodo(todo, defaultList);
+					if (result.success) {
+						const updateTodo = (t: Todo) =>
+							t.id === todo.id
+								? { ...t, reminderState: "pending" as ReminderState }
+								: t;
+						if (view === "backlog") {
+							setBacklog((prev) => prev.map(updateTodo));
+						} else {
+							setTodos((prev) => prev.map(updateTodo));
+						}
+					}
+					return;
+				}
+
+				// Mark as pending immediately for UI feedback
+				const markPending = (t: Todo) =>
 					t.id === todo.id
 						? { ...t, reminderState: "pending" as ReminderState }
 						: t;
-
 				if (view === "backlog") {
-					setBacklog((prev) => prev.map(updateTodo));
+					setBacklog((prev) => prev.map(markPending));
 				} else {
-					setTodos((prev) => prev.map(updateTodo));
+					setTodos((prev) => prev.map(markPending));
 				}
-			}
+
+				try {
+					// Fetch full thread
+					const thread = await client.getThread(todo.threadId);
+					if (!thread) {
+						createReminderFromTodo(todo, defaultList);
+						return;
+					}
+
+					// Generate specific action with Claude
+					const reminderContent = await generateReminderFromEmail(
+						thread,
+						todo.summary,
+					);
+
+					// Create reminder with Claude-generated content
+					createReminderFromTodo(todo, defaultList, {
+						title: reminderContent.title,
+						notes: reminderContent.notes,
+					});
+				} catch {
+					// Fall back to simple reminder on error
+					createReminderFromTodo(todo, defaultList);
+				}
+			})();
 		}
 
 		// Refresh
 		if (input === "r") {
-			setIsLoading(true);
-			setLoadingStep(1);
-			setLoadingMessage("Connecting to Gmail");
-			setLoadingDetail(undefined);
+			setLoading({ active: true, message: "Connecting to Gmail", step: 1 });
 			setTodos([]);
 			setBacklog([]);
 			setSelectedIndex(0);
@@ -328,16 +432,16 @@ export function App() {
 		);
 	}
 
-	if (isLoading) {
+	if (loading.active) {
 		return (
 			<Box flexDirection="column" height={terminalHeight} padding={1}>
 				<Header groups={accountGroups} selectedGroup={selectedGroup} />
-				<Box justifyContent="center" paddingY={2}>
+				<Box paddingY={1}>
 					<Spinner
-						message={loadingMessage}
-						step={loadingStep}
+						message={loading.message}
+						step={loading.step}
 						totalSteps={3}
-						detail={loadingDetail}
+						detail={loading.detail}
 					/>
 				</Box>
 			</Box>

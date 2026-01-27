@@ -1,15 +1,26 @@
-import { Box, Text } from "ink";
-import type { ReminderState, Todo } from "../lib/types.js";
+import { Box, Text, useStdout } from "ink";
+import type { ReminderState, Todo, TodoSource } from "../lib/types.js";
 
-function getReminderIndicator(state: ReminderState): string {
+function reminderIcon(state: ReminderState, source: TodoSource): string {
+	if (source === "reminder") return "📌";
 	switch (state) {
-		case "none":
-			return "  "; // 2 spaces for alignment
 		case "pending":
-			return "☐ "; // unchecked box
+			return "☐ ";
 		case "completed":
-			return "✓ "; // checkmark
+			return "✓ ";
+		default:
+			return "  ";
 	}
+}
+
+function reminderColor(
+	state: ReminderState,
+	source: TodoSource,
+): string | undefined {
+	if (source === "reminder") return "magenta";
+	if (state === "completed") return "green";
+	if (state === "pending") return "blue";
+	return undefined;
 }
 
 interface TodoItemProps {
@@ -24,11 +35,33 @@ function truncate(str: string | undefined, maxLen: number): string {
 	return `${str.slice(0, maxLen - 1)}…`;
 }
 
+// Fixed column widths
+const COL_PERSON = 16;
+const COL_DATE = 12;
+const COL_ACCOUNT = 14;
+
 export function TodoItem({
 	todo,
 	isSelected,
 	showAccount = true,
 }: TodoItemProps) {
+	const { stdout } = useStdout();
+	// Subtract 2 for the paddingX={1} on the parent Box in app.tsx
+	const availableWidth = (stdout?.columns || 80) - 2;
+
+	// Calculate how much space the summary column gets
+	// 2 (selector) + 2 (reminder) + 2 (star) + 1+person + 1+date + 1+account?
+	const fixedWidth =
+		2 +
+		2 +
+		2 +
+		1 +
+		COL_PERSON +
+		1 +
+		COL_DATE +
+		(showAccount ? 1 + COL_ACCOUNT : 0);
+	const summaryWidth = Math.max(20, availableWidth - fixedWidth);
+
 	return (
 		<Box>
 			{/* Selector */}
@@ -37,43 +70,33 @@ export function TodoItem({
 			</Text>
 
 			{/* Reminder indicator */}
-			<Text
-				color={
-					todo.reminderState === "completed"
-						? "green"
-						: todo.reminderState === "pending"
-							? "blue"
-							: undefined
-				}
-			>
-				{getReminderIndicator(todo.reminderState)}
+			<Text color={reminderColor(todo.reminderState, todo.source)}>
+				{reminderIcon(todo.reminderState, todo.source)}
 			</Text>
 
-			{/* Summary - flex width */}
-			<Box flexGrow={1} flexShrink={1}>
-				<Text wrap="truncate">
-					{todo.summary}
-					{todo.isStarred && <Text color="yellow"> ★</Text>}
-				</Text>
-			</Box>
+			{/* Summary - manually truncated */}
+			<Text>{truncate(todo.summary, summaryWidth)}</Text>
 
-			{/* Person - 14 chars */}
-			<Box width={14} marginLeft={1}>
-				<Text dimColor={!isSelected}>{truncate(todo.person || "", 14)}</Text>
-			</Box>
+			{/* Star */}
+			<Text color="yellow">{todo.isStarred ? " ★" : "  "}</Text>
 
-			{/* Deadline - 12 chars */}
-			<Box width={12} marginLeft={1}>
-				<Text dimColor={!isSelected}>
-					{todo.deadline ? truncate(todo.deadline, 12) : "—".padEnd(12)}
-				</Text>
-			</Box>
+			{/* Person */}
+			<Text dimColor={!isSelected}>
+				{" "}
+				{truncate(todo.person || todo.from, COL_PERSON)}
+			</Text>
 
-			{/* Account - 14 chars */}
+			{/* Date */}
+			<Text dimColor={!isSelected}>
+				{" "}
+				{todo.deadline
+					? truncate(todo.deadline, COL_DATE)
+					: "-".padEnd(COL_DATE)}
+			</Text>
+
+			{/* Account */}
 			{showAccount && (
-				<Box width={14} marginLeft={1}>
-					<Text dimColor>{truncate(todo.account, 14)}</Text>
-				</Box>
+				<Text dimColor> {truncate(todo.account, COL_ACCOUNT)}</Text>
 			)}
 		</Box>
 	);
