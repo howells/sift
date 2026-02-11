@@ -1,379 +1,492 @@
-import { type Auth, type gmail_v1, google } from "googleapis";
+import { spawn, spawnSync } from "node:child_process";
 import open from "open";
 
 export interface Email {
-	id: string;
-	threadId: string;
-	subject: string;
-	from: string;
-	fromEmail: string;
-	to: string;
-	date: string;
-	snippet: string;
-	isStarred: boolean;
-	isUnread: boolean;
-	labels: string[];
+  id: string;
+  threadId: string;
+  subject: string;
+  from: string;
+  fromEmail: string;
+  to: string;
+  date: string;
+  snippet: string;
+  isStarred: boolean;
+  isUnread: boolean;
+  labels: string[];
 }
 
 export interface EmailThread {
-	id: string;
-	subject: string;
-	messages: {
-		id: string;
-		from: string;
-		date: string;
-		body: string;
-	}[];
+  id: string;
+  subject: string;
+  messages: {
+    id: string;
+    from: string;
+    date: string;
+    body: string;
+  }[];
 }
 
-function getGmailClient(auth: Auth.OAuth2Client): gmail_v1.Gmail {
-	return google.gmail({ version: "v1", auth });
+interface GogSearchResult {
+  threads: {
+    id: string;
+    date: string;
+    from: string;
+    subject: string;
+    labels: string[];
+    messageCount: number;
+  }[];
+  nextPageToken?: string;
+}
+
+interface GogThreadResult {
+  thread: {
+    id: string;
+    messages: {
+      id: string;
+      labelIds: string[];
+      payload: {
+        headers: { name: string; value: string }[];
+        body?: { data?: string };
+        parts?: GogMessagePart[];
+      };
+    }[];
+  };
+}
+
+interface GogMessagePart {
+  mimeType?: string;
+  body?: { data?: string };
+  parts?: GogMessagePart[];
+}
+
+function runGog(args: string[], account?: string): string {
+  const result = spawnSync("gog", args, {
+    encoding: "utf-8",
+    maxBuffer: 10 * 1024 * 1024,
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout: 30_000,
+  });
+
+  if (result.error) {
+    throw parseGogError(result.error.message, account);
+  }
+
+  if (result.status !== 0) {
+    throw parseGogError(
+      result.stderr || `gog exited with code ${result.status}`,
+      account
+    );
+  }
+
+  return result.stdout;
+}
+
+/**
+ * Check if gog CLI is available.
+ */
+export function isGogAvailable(): boolean {
+  const result = spawnSync("gog", ["--version"], {
+    stdio: "pipe",
+    timeout: 5000,
+  });
+  return result.status === 0 && !result.error;
+}
+
+export class GogAuthError extends Error {
+  constructor(
+    message: string,
+    public account?: string
+  ) {
+    super(message);
+    this.name = "GogAuthError";
+  }
+}
+
+function parseGogError(stderr: string, account?: string): Error {
+  // Check for auth/token errors
+  if (
+    stderr.includes("invalid_grant") ||
+    stderr.includes("Token has been expired") ||
+    stderr.includes("Token has been revoked") ||
+    stderr.includes("oauth2:")
+  ) {
+    const msg = account
+      ? `Gmail token expired for ${account}. Run: gog auth add --account=${account}`
+      : "Gmail token expired. Run: gog auth add --account=<email>";
+    return new GogAuthError(msg, account);
+  }
+  return new Error(stderr);
+}
+
+async function runGogAsync(args: string[], account?: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("gog", args, {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve(stdout);
+      } else {
+        reject(
+          parseGogError(stderr || `gog exited with code ${code}`, account)
+        );
+      }
+    });
+
+    child.on("error", reject);
+  });
 }
 
 function parseHeader(
-	headers: gmail_v1.Schema$MessagePartHeader[] | undefined,
-	name: string,
+  headers: { name: string; value: string }[] | undefined,
+  name: string
 ): string {
-	return (
-		headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ||
-		""
-	);
+  return (
+    headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ||
+    ""
+  );
 }
 
-function parseEmail(message: gmail_v1.Schema$Message): Email {
-	const headers = message.payload?.headers;
-	const from = parseHeader(headers, "From");
-	const fromMatch = from.match(/<(.+?)>/) || [null, from];
-
-	return {
-		id: message.id!,
-		threadId: message.threadId!,
-		subject: parseHeader(headers, "Subject") || "(no subject)",
-		from: from.replace(/<.+?>/, "").trim() || from,
-		fromEmail: fromMatch[1] || from,
-		to: parseHeader(headers, "To"),
-		date: parseHeader(headers, "Date"),
-		snippet: message.snippet || "",
-		isStarred: message.labelIds?.includes("STARRED") || false,
-		isUnread: message.labelIds?.includes("UNREAD") || false,
-		labels: message.labelIds || [],
-	};
+function decodeBase64(data: string | undefined): string {
+  if (!data) {
+    return "";
+  }
+  // Gmail uses URL-safe base64
+  const normalized = data.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(normalized, "base64").toString("utf-8");
 }
 
-function decodeBody(body: gmail_v1.Schema$MessagePartBody | undefined): string {
-	if (!body?.data) return "";
-	return Buffer.from(body.data, "base64").toString("utf-8");
-}
+function extractTextBody(payload: GogMessagePart | undefined): string {
+  if (!payload) {
+    return "";
+  }
 
-function extractTextBody(
-	payload: gmail_v1.Schema$MessagePart | undefined,
-): string {
-	if (!payload) return "";
+  // Simple text/plain
+  if (payload.mimeType === "text/plain" && payload.body?.data) {
+    return decodeBase64(payload.body.data);
+  }
 
-	// Simple text/plain
-	if (payload.mimeType === "text/plain" && payload.body?.data) {
-		return decodeBody(payload.body);
-	}
+  // Multipart - look for text/plain
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      if (part.mimeType === "text/plain" && part.body?.data) {
+        return decodeBase64(part.body.data);
+      }
+      // Nested multipart
+      if (part.parts) {
+        const nested = extractTextBody(part);
+        if (nested) {
+          return nested;
+        }
+      }
+    }
+    // Fallback to text/html if no plain text
+    for (const part of payload.parts) {
+      if (part.mimeType === "text/html" && part.body?.data) {
+        return decodeBase64(part.body.data)
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+    }
+  }
 
-	// Multipart - look for text/plain
-	if (payload.parts) {
-		for (const part of payload.parts) {
-			if (part.mimeType === "text/plain" && part.body?.data) {
-				return decodeBody(part.body);
-			}
-			// Nested multipart
-			if (part.parts) {
-				const nested = extractTextBody(part);
-				if (nested) return nested;
-			}
-		}
-		// Fallback to text/html if no plain text
-		for (const part of payload.parts) {
-			if (part.mimeType === "text/html" && part.body?.data) {
-				// Strip HTML tags for a rough text version
-				return decodeBody(part.body)
-					.replace(/<[^>]+>/g, " ")
-					.replace(/\s+/g, " ")
-					.trim();
-			}
-		}
-	}
-
-	return "";
+  return "";
 }
 
 export class GmailClient {
-	private gmail: gmail_v1.Gmail;
-	private userEmail: string;
+  private readonly accountEmail: string;
 
-	constructor(auth: Auth.OAuth2Client, userEmail: string) {
-		this.gmail = getGmailClient(auth);
-		this.userEmail = userEmail;
-	}
+  constructor(accountEmail: string) {
+    this.accountEmail = accountEmail;
+  }
 
-	async listStarred(maxResults = 50): Promise<Email[]> {
-		const response = await this.gmail.users.messages.list({
-			userId: "me",
-			q: "is:starred",
-			maxResults,
-		});
+  private get accountFlag(): string {
+    return `--account=${this.accountEmail}`;
+  }
 
-		if (!response.data.messages) return [];
+  async listStarred(maxResults = 50): Promise<Email[]> {
+    return this.search("is:starred", maxResults);
+  }
 
-		const emails = await Promise.all(
-			response.data.messages.map((m) => this.getMessage(m.id!)),
-		);
+  async listUnread(maxResults = 50): Promise<Email[]> {
+    // Strict filter: inbox only, exclude categories and common automated notifications
+    const query = `is:unread in:inbox -category:promotions -category:social -category:updates -category:forums
+			-subject:"sign-in" -subject:"signed in" -subject:"new login" -subject:"security alert"
+			-subject:"verify your" -subject:"confirm your" -subject:"was this you"
+			-subject:"password reset" -subject:"2-step" -subject:"two-factor"
+			-from:noreply -from:no-reply -from:notifications@`;
+    return this.search(query, maxResults);
+  }
 
-		return emails.filter((e): e is Email => e !== null);
-	}
+  async search(query: string, maxResults = 50): Promise<Email[]> {
+    const output = await runGogAsync(
+      [
+        "gmail",
+        "search",
+        query,
+        `--max=${maxResults}`,
+        "--json",
+        this.accountFlag,
+      ],
+      this.accountEmail
+    );
 
-	async listUnread(maxResults = 50): Promise<Email[]> {
-		// Strict filter: inbox only, exclude categories and common automated notifications
-		const response = await this.gmail.users.messages.list({
-			userId: "me",
-			q: `is:unread in:inbox -category:promotions -category:social -category:updates -category:forums
-          -subject:"sign-in" -subject:"signed in" -subject:"new login" -subject:"security alert"
-          -subject:"verify your" -subject:"confirm your" -subject:"was this you"
-          -subject:"password reset" -subject:"2-step" -subject:"two-factor"
-          -from:noreply -from:no-reply -from:notifications@`,
-			maxResults,
-		});
+    const result: GogSearchResult = JSON.parse(output);
+    if (!result.threads) {
+      return [];
+    }
 
-		if (!response.data.messages) return [];
+    // gog search returns thread summaries, convert to Email format
+    return result.threads.map((t) => {
+      const fromMatch = t.from.match(/<(.+?)>/) || [null, t.from];
+      return {
+        id: t.id, // Thread ID serves as message ID for our purposes
+        threadId: t.id,
+        subject: t.subject || "(no subject)",
+        from: t.from.replace(/<.+?>/, "").trim() || t.from,
+        fromEmail: fromMatch[1] || t.from,
+        to: "", // Not available in search results
+        date: t.date,
+        snippet: "", // Not available in search results
+        isStarred: t.labels?.includes("STARRED"),
+        isUnread: t.labels?.includes("UNREAD"),
+        labels: t.labels || [],
+      };
+    });
+  }
 
-		const emails = await Promise.all(
-			response.data.messages.map((m) => this.getMessage(m.id!)),
-		);
+  async getMessage(id: string): Promise<Email | null> {
+    try {
+      const output = runGog(
+        ["gmail", "get", id, "--json", this.accountFlag],
+        this.accountEmail
+      );
 
-		return emails.filter((e): e is Email => e !== null);
-	}
+      const msg = JSON.parse(output);
+      const headers = msg.payload?.headers;
+      const from = parseHeader(headers, "From");
+      const fromMatch = from.match(/<(.+?)>/) || [null, from];
 
-	async search(query: string, maxResults = 50): Promise<Email[]> {
-		const response = await this.gmail.users.messages.list({
-			userId: "me",
-			q: query,
-			maxResults,
-		});
+      return {
+        id: msg.id,
+        threadId: msg.threadId,
+        subject: parseHeader(headers, "Subject") || "(no subject)",
+        from: from.replace(/<.+?>/, "").trim() || from,
+        fromEmail: fromMatch[1] || from,
+        to: parseHeader(headers, "To"),
+        date: parseHeader(headers, "Date"),
+        snippet: msg.snippet || "",
+        isStarred: msg.labelIds?.includes("STARRED"),
+        isUnread: msg.labelIds?.includes("UNREAD"),
+        labels: msg.labelIds || [],
+      };
+    } catch {
+      return null;
+    }
+  }
 
-		if (!response.data.messages) return [];
+  async getThread(threadId: string): Promise<EmailThread | null> {
+    try {
+      const output = await runGogAsync(
+        [
+          "gmail",
+          "thread",
+          "get",
+          threadId,
+          "--full",
+          "--json",
+          this.accountFlag,
+        ],
+        this.accountEmail
+      );
 
-		const emails = await Promise.all(
-			response.data.messages.map((m) => this.getMessage(m.id!)),
-		);
+      const result: GogThreadResult = JSON.parse(output);
+      const thread = result.thread;
+      if (!thread.messages?.length) {
+        return null;
+      }
 
-		return emails.filter((e): e is Email => e !== null);
-	}
+      const firstMessage = thread.messages[0];
+      const headers = firstMessage.payload?.headers;
 
-	async getMessage(id: string): Promise<Email | null> {
-		try {
-			const response = await this.gmail.users.messages.get({
-				userId: "me",
-				id,
-				format: "metadata",
-				metadataHeaders: ["From", "To", "Subject", "Date"],
-			});
+      return {
+        id: thread.id,
+        subject: parseHeader(headers, "Subject") || "(no subject)",
+        messages: thread.messages.map((m) => ({
+          id: m.id,
+          from: parseHeader(m.payload?.headers, "From"),
+          date: parseHeader(m.payload?.headers, "Date"),
+          body: extractTextBody(m.payload as GogMessagePart),
+        })),
+      };
+    } catch {
+      return null;
+    }
+  }
 
-			return parseEmail(response.data);
-		} catch {
-			return null;
-		}
-	}
+  async star(messageId: string): Promise<boolean> {
+    try {
+      runGog(
+        [
+          "gmail",
+          "thread",
+          "modify",
+          messageId,
+          "--add=STARRED",
+          this.accountFlag,
+        ],
+        this.accountEmail
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
-	async getThread(threadId: string): Promise<EmailThread | null> {
-		try {
-			const response = await this.gmail.users.threads.get({
-				userId: "me",
-				id: threadId,
-				format: "full",
-			});
+  async unstar(messageId: string): Promise<boolean> {
+    try {
+      runGog(
+        [
+          "gmail",
+          "thread",
+          "modify",
+          messageId,
+          "--remove=STARRED",
+          this.accountFlag,
+        ],
+        this.accountEmail
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
-			const thread = response.data;
-			if (!thread.messages?.length) return null;
+  async archive(messageId: string): Promise<boolean> {
+    try {
+      runGog(
+        [
+          "gmail",
+          "thread",
+          "modify",
+          messageId,
+          "--remove=INBOX",
+          this.accountFlag,
+        ],
+        this.accountEmail
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
-			const firstMessage = thread.messages[0];
-			const headers = firstMessage.payload?.headers;
+  async markRead(messageId: string): Promise<boolean> {
+    try {
+      runGog(
+        [
+          "gmail",
+          "thread",
+          "modify",
+          messageId,
+          "--remove=UNREAD",
+          this.accountFlag,
+        ],
+        this.accountEmail
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
-			return {
-				id: thread.id!,
-				subject: parseHeader(headers, "Subject") || "(no subject)",
-				messages: thread.messages.map((m) => ({
-					id: m.id!,
-					from: parseHeader(m.payload?.headers, "From"),
-					date: parseHeader(m.payload?.headers, "Date"),
-					body: extractTextBody(m.payload),
-				})),
-			};
-		} catch {
-			return null;
-		}
-	}
+  async forward(
+    messageId: string,
+    to: string,
+    additionalMessage?: string
+  ): Promise<boolean> {
+    try {
+      const thread = await this.getThread(messageId);
+      if (!thread) {
+        return false;
+      }
 
-	async star(messageId: string): Promise<boolean> {
-		try {
-			await this.gmail.users.messages.modify({
-				userId: "me",
-				id: messageId,
-				requestBody: {
-					addLabelIds: ["STARRED"],
-				},
-			});
-			return true;
-		} catch {
-			return false;
-		}
-	}
+      const originalMessage = thread.messages.at(-1);
+      if (!originalMessage) {
+        return false;
+      }
+      const subject = thread.subject.startsWith("Fwd:")
+        ? thread.subject
+        : `Fwd: ${thread.subject}`;
 
-	async unstar(messageId: string): Promise<boolean> {
-		try {
-			await this.gmail.users.messages.modify({
-				userId: "me",
-				id: messageId,
-				requestBody: {
-					removeLabelIds: ["STARRED"],
-				},
-			});
-			return true;
-		} catch {
-			return false;
-		}
-	}
+      const body = [
+        additionalMessage || "",
+        "",
+        "---------- Forwarded message ----------",
+        `From: ${originalMessage.from}`,
+        `Date: ${originalMessage.date}`,
+        `Subject: ${thread.subject}`,
+        "",
+        originalMessage.body,
+      ].join("\n");
 
-	async archive(messageId: string): Promise<boolean> {
-		try {
-			await this.gmail.users.messages.modify({
-				userId: "me",
-				id: messageId,
-				requestBody: {
-					removeLabelIds: ["INBOX"],
-				},
-			});
-			return true;
-		} catch {
-			return false;
-		}
-	}
+      runGog(
+        [
+          "gmail",
+          "send",
+          `--to=${to}`,
+          `--subject=${subject}`,
+          `--body=${body}`,
+          this.accountFlag,
+        ],
+        this.accountEmail
+      );
 
-	async markRead(messageId: string): Promise<boolean> {
-		try {
-			await this.gmail.users.messages.modify({
-				userId: "me",
-				id: messageId,
-				requestBody: {
-					removeLabelIds: ["UNREAD"],
-				},
-			});
-			return true;
-		} catch {
-			return false;
-		}
-	}
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
-	async forward(
-		messageId: string,
-		to: string,
-		additionalMessage?: string,
-	): Promise<boolean> {
-		try {
-			const thread = await this.getThread(messageId);
-			if (!thread) return false;
+  async reply(messageId: string, message: string): Promise<boolean> {
+    try {
+      runGog(
+        [
+          "gmail",
+          "send",
+          `--thread-id=${messageId}`,
+          "--reply-all",
+          `--body=${message}`,
+          this.accountFlag,
+        ],
+        this.accountEmail
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
-			const originalMessage = thread.messages[thread.messages.length - 1];
-			const subject = thread.subject.startsWith("Fwd:")
-				? thread.subject
-				: `Fwd: ${thread.subject}`;
+  getWebUrl(threadId: string): string {
+    // Gmail web URLs use thread IDs - use #all/ to find regardless of label
+    return `https://mail.google.com/mail/?authuser=${encodeURIComponent(this.accountEmail)}#all/${threadId}`;
+  }
 
-			const body = [
-				additionalMessage || "",
-				"",
-				"---------- Forwarded message ----------",
-				`From: ${originalMessage.from}`,
-				`Date: ${originalMessage.date}`,
-				`Subject: ${thread.subject}`,
-				"",
-				originalMessage.body,
-			].join("\n");
-
-			const email = [
-				`To: ${to}`,
-				`Subject: ${subject}`,
-				`Content-Type: text/plain; charset="UTF-8"`,
-				"",
-				body,
-			].join("\n");
-
-			const encodedEmail = Buffer.from(email)
-				.toString("base64")
-				.replace(/\+/g, "-")
-				.replace(/\//g, "_")
-				.replace(/=+$/, "");
-
-			await this.gmail.users.messages.send({
-				userId: "me",
-				requestBody: {
-					raw: encodedEmail,
-				},
-			});
-
-			return true;
-		} catch (error) {
-			console.error("Forward failed:", error);
-			return false;
-		}
-	}
-
-	async reply(messageId: string, message: string): Promise<boolean> {
-		try {
-			const thread = await this.getThread(messageId);
-			if (!thread) return false;
-
-			const originalMessage = thread.messages[thread.messages.length - 1];
-			const subject = thread.subject.startsWith("Re:")
-				? thread.subject
-				: `Re: ${thread.subject}`;
-
-			// Extract reply-to email
-			const fromMatch = originalMessage.from.match(/<(.+?)>/);
-			const replyTo = fromMatch ? fromMatch[1] : originalMessage.from;
-
-			const email = [
-				`To: ${replyTo}`,
-				`Subject: ${subject}`,
-				`In-Reply-To: ${messageId}`,
-				`References: ${messageId}`,
-				`Content-Type: text/plain; charset="UTF-8"`,
-				"",
-				message,
-			].join("\n");
-
-			const encodedEmail = Buffer.from(email)
-				.toString("base64")
-				.replace(/\+/g, "-")
-				.replace(/\//g, "_")
-				.replace(/=+$/, "");
-
-			await this.gmail.users.messages.send({
-				userId: "me",
-				requestBody: {
-					raw: encodedEmail,
-					threadId: thread.id,
-				},
-			});
-
-			return true;
-		} catch (error) {
-			console.error("Reply failed:", error);
-			return false;
-		}
-	}
-
-	getWebUrl(threadId: string): string {
-		// Gmail web URLs use thread IDs - use #all/ to find regardless of label
-		// authuser param selects the correct account by email
-		return `https://mail.google.com/mail/?authuser=${encodeURIComponent(this.userEmail)}#all/${threadId}`;
-	}
-
-	async openInBrowser(threadId: string): Promise<void> {
-		const url = this.getWebUrl(threadId);
-		await open(url);
-	}
+  async openInBrowser(threadId: string): Promise<void> {
+    const url = this.getWebUrl(threadId);
+    await open(url);
+  }
 }
