@@ -7,26 +7,13 @@
   "linter": {
     "rules": {
       "style": {
-        "noNonNullAssertion": "warn",
-        "useFilenamingConvention": "off",
-        "noParameterProperties": "off",
-        "useConsistentMemberAccessibility": "off",
-        "noExportedImports": "off",
-        "noNestedTernary": "off"
+        "noNonNullAssertion": "warn"
       },
       "correctness": {
         "useExhaustiveDependencies": "warn"
       },
       "suspicious": {
-        "noExplicitAny": "warn",
-        "useAwait": "warn"
-      },
-      "complexity": {
-        "noExcessiveCognitiveComplexity": "warn"
-      },
-      "performance": {
-        "noNamespaceImport": "off",
-        "useTopLevelRegex": "off"
+        "noExplicitAny": "warn"
       }
     }
   }

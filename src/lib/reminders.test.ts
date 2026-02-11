@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { Reminder } from "./reminders.js";
+import type { Reminder } from "./reminders.ts";
 import {
   formatDeadline,
   reminderToUrgency,
   urgencyToDue,
   urgencyToPriority,
-} from "./reminders.js";
+} from "./reminders.ts";
 
 describe("urgencyToPriority", () => {
   it("returns 'high' for overdue", () => {

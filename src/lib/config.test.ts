@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getAccountGroups, type SiftConfig, validateConfig } from "./config.js";
+import { getAccountGroups, type SiftConfig, validateConfig } from "./config.ts";
 
 describe("getAccountGroups", () => {
   it("returns unique groups from accounts", () => {

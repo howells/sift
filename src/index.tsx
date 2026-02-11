@@ -5,7 +5,7 @@ const args = process.argv.slice(2);
 
 if (args.includes("--setup") || args.includes("-s")) {
   // Run setup wizard
-  import("./setup.js");
+  import("./setup.tsx");
 } else if (args.includes("--help") || args.includes("-h")) {
   console.log(`
 sift - AI-powered email triage
@@ -26,7 +26,7 @@ Keyboard shortcuts (in app):
   process.exit(0);
 } else {
   // Run main app
-  const { App } = await import("./app.js");
+  const { App } = await import("./app.tsx");
 
   // Enter alternate screen buffer (like vim/less) - prevents scrollback pollution
   process.stdout.write("\x1b[?1049h");

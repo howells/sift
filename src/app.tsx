@@ -1,9 +1,67 @@
 import { Box, Text, useApp, useInput, useStdout } from "ink";
-import { Header } from "./components/Header.js";
-import { Spinner } from "./components/Spinner.js";
-import { StatusBar } from "./components/StatusBar.js";
-import { TodoList } from "./components/TodoList.js";
-import { useSiftData } from "./hooks/useSiftData.js";
+import { Header } from "./components/header.tsx";
+import { Spinner } from "./components/spinner.tsx";
+import { StatusBar } from "./components/status-bar.tsx";
+import { TodoList } from "./components/todo-list.tsx";
+import { useSiftData } from "./hooks/use-sift-data.ts";
+
+function handleKey(
+  input: string,
+  key: any,
+  sift: ReturnType<typeof useSiftData>,
+  exit: () => void
+) {
+  if (sift.loading.active) {
+    return;
+  }
+
+  if (key.upArrow || input === "k") {
+    sift.moveUp();
+    return;
+  }
+  if (key.downArrow || input === "j") {
+    sift.moveDown();
+    return;
+  }
+  if (input === "b") {
+    sift.toggleBacklog();
+    return;
+  }
+  if (key.escape) {
+    sift.dismissBacklog();
+    return;
+  }
+
+  const num = Number.parseInt(input, 10);
+  if (num >= 1 && num <= sift.accountGroups.length) {
+    sift.toggleGroup(num);
+    return;
+  }
+
+  if (key.return) {
+    sift.openTodo();
+    return;
+  }
+  if (input === "d") {
+    sift.markDone();
+    return;
+  }
+  if (input === "s") {
+    sift.starTodo();
+    return;
+  }
+  if (input === "t") {
+    sift.createReminder();
+    return;
+  }
+  if (input === "r") {
+    sift.refresh();
+    return;
+  }
+  if (input === "q") {
+    exit();
+  }
+}
 
 export function App() {
   const { exit } = useApp();
@@ -13,46 +71,7 @@ export function App() {
   const sift = useSiftData();
 
   useInput((input, key) => {
-    if (sift.loading.active) {
-      return;
-    }
-
-    if (key.upArrow || input === "k") {
-      sift.moveUp();
-    }
-    if (key.downArrow || input === "j") {
-      sift.moveDown();
-    }
-    if (input === "b") {
-      sift.toggleBacklog();
-    }
-    if (key.escape) {
-      sift.dismissBacklog();
-    }
-
-    const num = Number.parseInt(input, 10);
-    if (num >= 1 && num <= sift.accountGroups.length) {
-      sift.toggleGroup(num);
-    }
-
-    if (key.return) {
-      sift.openTodo();
-    }
-    if (input === "d") {
-      sift.markDone();
-    }
-    if (input === "s") {
-      sift.starTodo();
-    }
-    if (input === "t") {
-      sift.createReminder();
-    }
-    if (input === "r") {
-      sift.refresh();
-    }
-    if (input === "q") {
-      exit();
-    }
+    handleKey(input, key, sift, exit);
   });
 
   if (sift.error) {

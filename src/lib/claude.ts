@@ -1,10 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClaudeCodeClient, jsonSchemaFromZod } from "@howells/envelope";
 import { z } from "zod";
-import { cacheAnalysisBatch, getCachedAnalysis, hashEmail } from "./cache.js";
-import { loadConfig } from "./config.js";
-import type { Email } from "./gmail.js";
-import type { AnalysisResult, Todo } from "./types.js";
+import { cacheAnalysisBatch, getCachedAnalysis, hashEmail } from "./cache.ts";
+import { loadConfig } from "./config.ts";
+import type { Email } from "./gmail.ts";
+import type { AnalysisResult, Todo } from "./types.ts";
 
 // --- Zod schemas for model output ---
 
@@ -47,6 +47,9 @@ export type ReminderContent = z.infer<typeof ReminderContentSchema>;
 const emailAnalysisJsonSchema = jsonSchemaFromZod(EmailAnalysisSchema);
 const commandJsonSchema = jsonSchemaFromZod(CommandSchema);
 const reminderJsonSchema = jsonSchemaFromZod(ReminderContentSchema);
+
+// JSON extraction regex
+const JSON_REGEX = /\{[\s\S]*\}/;
 
 // CLI client — handles spawn, retries, timeout, structured output
 const cliClient = createClaudeCodeClient({
@@ -106,7 +109,7 @@ async function callStructured<T extends z.ZodTypeAny>(
 
   if (apiKey) {
     const text = await callAnthropicApi(prompt, apiKey);
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const jsonMatch = text.match(JSON_REGEX);
     if (!jsonMatch) {
       throw new Error("No valid JSON in API response");
     }

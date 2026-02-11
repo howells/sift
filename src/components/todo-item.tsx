@@ -1,5 +1,5 @@
 import { Box, Text, useStdout } from "ink";
-import type { ReminderState, Todo, TodoSource } from "../lib/types.js";
+import type { ReminderState, Todo, TodoSource } from "../lib/types.ts";
 
 function reminderIcon(state: ReminderState, source: TodoSource): string {
   if (source === "reminder") {

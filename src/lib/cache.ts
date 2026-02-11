@@ -1,15 +1,15 @@
 import { createHash } from "node:crypto";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import Database from "better-sqlite3";
-import type { Todo } from "./types.js";
+import type { Todo } from "./types.ts";
 
-const CACHE_DIR = path.join(import.meta.dirname, "../../.cache");
-const DB_PATH = path.join(CACHE_DIR, "sift.db");
+const CACHE_DIR = join(import.meta.dirname, "../../.cache");
+const DB_PATH = join(CACHE_DIR, "sift.db");
 
 // Ensure cache directory exists with restricted permissions (contains email data)
-if (!fs.existsSync(CACHE_DIR)) {
-  fs.mkdirSync(CACHE_DIR, { recursive: true, mode: 0o700 });
+if (!existsSync(CACHE_DIR)) {
+  mkdirSync(CACHE_DIR, { recursive: true, mode: 0o700 });
 }
 
 const db = new Database(DB_PATH);

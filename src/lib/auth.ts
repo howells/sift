@@ -3,10 +3,10 @@
  * Gmail authentication is now handled by the gog CLI
  */
 
-import { type AccountConfig, getAccountGroups, loadConfig } from "./config.js";
+import type { AccountConfig } from "./config.ts";
+import { getAccountGroups, loadConfig } from "./config.ts";
 
-// Re-export for backwards compatibility
-export type { AccountConfig };
+export type { AccountConfig } from "./config.ts";
 
 export function getAccounts(): AccountConfig[] {
   const config = loadConfig();

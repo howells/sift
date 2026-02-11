@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-import * as fs from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { Box, render, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import React, { useState } from "react";
-import { checkGogAuth } from "./lib/auth.js";
+import { checkGogAuth } from "./lib/auth.ts";
 import {
   type AccountConfig,
   getConfigDir,
   isClaudeCliAvailable,
   type SiftConfig,
   saveConfig,
-} from "./lib/config.js";
+} from "./lib/config.ts";
 
 type Step =
   | "welcome"
@@ -23,6 +23,19 @@ type Step =
   | "api_key"
   | "confirm"
   | "done";
+
+function getLLMDisplayName(
+  claudeAvailable: boolean | null,
+  apiKey: string
+): string {
+  if (claudeAvailable) {
+    return "Claude CLI";
+  }
+  if (apiKey) {
+    return "Anthropic API";
+  }
+  return "None configured!";
+}
 
 function Setup() {
   const { exit } = useApp();
@@ -41,53 +54,82 @@ function Setup() {
     isClaudeCliAvailable().then(setClaudeAvailable);
   }, []);
 
-  useInput((input, key) => {
-    if (
+  const handleMoreAccountsKey = (input: string, key: any) => {
+    if (input === "y") {
+      setCurrentAccount({});
+      setInputValue("");
+      setStep("account_name");
+    } else if (input === "n" || key.return) {
+      setStep("api_key");
+    }
+  };
+
+  const handleConfirmKey = () => {
+    const config: SiftConfig = {
+      accounts,
+      anthropicApiKey: apiKey || undefined,
+      preferClaudeCli: claudeAvailable === true,
+    };
+    saveConfig(config);
+    setStep("done");
+  };
+
+  const handleSetupKey = (input: string, key: any) => {
+    const inputQuit =
       input === "q" &&
       step !== "account_name" &&
       step !== "account_email" &&
       step !== "account_group" &&
-      step !== "api_key"
-    ) {
+      step !== "api_key";
+
+    if (inputQuit) {
       exit();
+      return;
     }
 
-    if (step === "welcome" && key.return) {
-      setStep("accounts");
-    }
-
-    if (step === "accounts" && key.return) {
-      setStep("account_name");
-    }
-
-    if (step === "account_verify" && key.return) {
-      setStep("more_accounts");
-    }
-
-    if (step === "more_accounts") {
-      if (input === "y") {
-        setCurrentAccount({});
-        setInputValue("");
-        setStep("account_name");
-      } else if (input === "n" || key.return) {
-        setStep("api_key");
+    switch (step) {
+      case "welcome": {
+        if (key.return) {
+          setStep("accounts");
+        }
+        break;
+      }
+      case "accounts": {
+        if (key.return) {
+          setStep("account_name");
+        }
+        break;
+      }
+      case "account_verify": {
+        if (key.return) {
+          setStep("more_accounts");
+        }
+        break;
+      }
+      case "more_accounts": {
+        handleMoreAccountsKey(input, key);
+        break;
+      }
+      case "confirm": {
+        if (key.return) {
+          handleConfirmKey();
+        }
+        break;
+      }
+      case "done": {
+        if (key.return) {
+          exit();
+        }
+        break;
+      }
+      default: {
+        // no-op for other steps
       }
     }
+  };
 
-    if (step === "confirm" && key.return) {
-      // Save config
-      const config: SiftConfig = {
-        accounts,
-        anthropicApiKey: apiKey || undefined,
-        preferClaudeCli: claudeAvailable === true,
-      };
-      saveConfig(config);
-      setStep("done");
-    }
-
-    if (step === "done" && key.return) {
-      exit();
-    }
+  useInput((input, key) => {
+    handleSetupKey(input, key);
   });
 
   const handleSubmit = async (value: string) => {
@@ -287,14 +329,7 @@ function Setup() {
             ))}
           </Box>
           <Box marginTop={1}>
-            <Text>
-              LLM:{" "}
-              {claudeAvailable
-                ? "Claude CLI"
-                : apiKey
-                  ? "Anthropic API"
-                  : "None configured!"}
-            </Text>
+            <Text>LLM: {getLLMDisplayName(claudeAvailable, apiKey)}</Text>
           </Box>
           <Box marginTop={1}>
             <Text>
@@ -334,8 +369,8 @@ function Setup() {
 
 // Ensure config directory exists
 const configDir = getConfigDir();
-if (!fs.existsSync(configDir)) {
-  fs.mkdirSync(configDir, { recursive: true });
+if (!existsSync(configDir)) {
+  mkdirSync(configDir, { recursive: true });
 }
 
 render(<Setup />);

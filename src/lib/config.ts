@@ -1,6 +1,6 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 export interface AccountConfig {
   name: string;
@@ -20,15 +20,15 @@ export interface SiftConfig {
   preferClaudeCli?: boolean; // If true, try claude CLI first, fall back to API
 }
 
-const CONFIG_DIR = path.join(os.homedir(), ".config", "sift");
-const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+const CONFIG_DIR = join(homedir(), ".config", "sift");
+const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
 export function getConfigDir(): string {
   return CONFIG_DIR;
 }
 
 export function configExists(): boolean {
-  return fs.existsSync(CONFIG_FILE);
+  return existsSync(CONFIG_FILE);
 }
 
 export function loadConfig(): SiftConfig | null {
@@ -37,7 +37,7 @@ export function loadConfig(): SiftConfig | null {
   }
 
   try {
-    const content = fs.readFileSync(CONFIG_FILE, "utf-8");
+    const content = readFileSync(CONFIG_FILE, "utf-8");
     return JSON.parse(content) as SiftConfig;
   } catch {
     return null;
@@ -46,12 +46,12 @@ export function loadConfig(): SiftConfig | null {
 
 export function saveConfig(config: SiftConfig): void {
   // Ensure config directory exists with restricted permissions
-  if (!fs.existsSync(CONFIG_DIR)) {
-    fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  if (!existsSync(CONFIG_DIR)) {
+    mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   }
 
   // Config contains API keys — restrict to owner only
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
+  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
     mode: 0o600,
   });
 }

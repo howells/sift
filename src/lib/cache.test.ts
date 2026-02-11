@@ -9,8 +9,10 @@ import {
   hashEmail,
   pruneOldEntries,
   removeCachedAnalysis,
-} from "./cache.js";
-import type { Todo } from "./types.js";
+} from "./cache.ts";
+import type { Todo } from "./types.ts";
+
+const HEX_REGEX = /^[0-9a-f]{16}$/;
 
 describe("hashEmail", () => {
   const baseEmail = {
@@ -30,7 +32,7 @@ describe("hashEmail", () => {
 
   it("returns a 16-char hex string", () => {
     const hash = hashEmail(baseEmail);
-    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(hash).toMatch(HEX_REGEX);
   });
 
   it("returns different hash when subject changes", () => {
@@ -69,7 +71,7 @@ describe("hashEmail", () => {
       subject: "",
       snippet: "",
     });
-    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(hash).toMatch(HEX_REGEX);
   });
 });
 

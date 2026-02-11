@@ -1,11 +1,89 @@
 import { Box, Text, useStdout } from "ink";
-import type { Todo } from "../lib/types.js";
-import { TodoItem } from "./TodoItem.js";
+import type { Todo } from "../lib/types.ts";
+import { TodoItem } from "./todo-item.tsx";
 
 interface TodoListProps {
   todos: Todo[];
   selectedIndex: number;
   showAccount?: boolean;
+}
+
+type ListItem =
+  | {
+      type: "header";
+      title: string;
+      icon: string;
+      color: string;
+      count: number;
+    }
+  | { type: "todo"; todo: Todo; globalIndex: number };
+
+function buildFlatList(
+  overdue: Todo[],
+  thisWeek: Todo[],
+  whenYouCan: Todo[]
+): ListItem[] {
+  const flatList: ListItem[] = [];
+  let globalIndex = 0;
+
+  const addSection = (
+    title: string,
+    icon: string,
+    items: Todo[],
+    color: string
+  ) => {
+    if (items.length === 0) {
+      return;
+    }
+    flatList.push({ type: "header", title, icon, color, count: items.length });
+    for (const todo of items) {
+      flatList.push({ type: "todo", todo, globalIndex });
+      globalIndex++;
+    }
+  };
+
+  addSection("OVERDUE", "🔴", overdue, "red");
+  addSection("THIS WEEK", "🟡", thisWeek, "yellow");
+  addSection("WHEN YOU CAN", "🔵", whenYouCan, "cyan");
+
+  return flatList;
+}
+
+function findFlatListWindow(
+  flatList: ListItem[],
+  windowStart: number,
+  windowEnd: number
+): { flatStart: number; flatEnd: number } {
+  let todoCount = 0;
+  let flatStart = 0;
+  let flatEnd = flatList.length;
+
+  // Find flat index where windowStart todo begins
+  for (let i = 0; i < flatList.length; i++) {
+    const item = flatList[i];
+    if (item.type === "todo") {
+      if (todoCount === windowStart) {
+        flatStart = i > 0 && flatList[i - 1].type === "header" ? i - 1 : i;
+        break;
+      }
+      todoCount++;
+    }
+  }
+
+  // Find flat index where windowEnd todo ends
+  todoCount = 0;
+  for (let i = 0; i < flatList.length; i++) {
+    const item = flatList[i];
+    if (item.type === "todo") {
+      if (todoCount === windowEnd - 1) {
+        flatEnd = i + 1;
+        break;
+      }
+      todoCount++;
+    }
+  }
+
+  return { flatStart, flatEnd };
 }
 
 export function TodoList({
@@ -34,70 +112,13 @@ export function TodoList({
   const thisWeek = todos.filter((t) => t.urgency === "this_week");
   const whenYouCan = todos.filter((t) => t.urgency === "when_you_can");
 
-  // Build flat list with section headers for windowing
-  type ListItem =
-    | {
-        type: "header";
-        title: string;
-        icon: string;
-        color: string;
-        count: number;
-      }
-    | { type: "todo"; todo: Todo; globalIndex: number };
-  const flatList: ListItem[] = [];
-  let globalIndex = 0;
+  const flatList = buildFlatList(overdue, thisWeek, whenYouCan);
 
-  const addSection = (
-    title: string,
-    icon: string,
-    items: Todo[],
-    color: string
-  ) => {
-    if (items.length === 0) {
-      return;
-    }
-    flatList.push({ type: "header", title, icon, color, count: items.length });
-    for (const todo of items) {
-      flatList.push({ type: "todo", todo, globalIndex });
-      globalIndex++;
-    }
-  };
-
-  addSection("OVERDUE", "🔴", overdue, "red");
-  addSection("THIS WEEK", "🟡", thisWeek, "yellow");
-  addSection("WHEN YOU CAN", "🔵", whenYouCan, "cyan");
-
-  // Find which flat list indices to show based on selected todo index
-  // We need to map the todo window to flat list indices (including headers)
-  let todoCount = 0;
-  let flatStart = 0;
-  let flatEnd = flatList.length;
-
-  // Find flat index where windowStart todo begins
-  for (let i = 0; i < flatList.length; i++) {
-    const item = flatList[i];
-    if (item.type === "todo") {
-      if (todoCount === windowStart) {
-        // Include preceding header if there is one
-        flatStart = i > 0 && flatList[i - 1].type === "header" ? i - 1 : i;
-        break;
-      }
-      todoCount++;
-    }
-  }
-
-  // Find flat index where windowEnd todo ends
-  todoCount = 0;
-  for (let i = 0; i < flatList.length; i++) {
-    const item = flatList[i];
-    if (item.type === "todo") {
-      if (todoCount === windowEnd - 1) {
-        flatEnd = i + 1;
-        break;
-      }
-      todoCount++;
-    }
-  }
+  const { flatStart, flatEnd } = findFlatListWindow(
+    flatList,
+    windowStart,
+    windowEnd
+  );
 
   const visibleItems = flatList.slice(flatStart, flatEnd);
 

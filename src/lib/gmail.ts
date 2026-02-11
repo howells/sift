@@ -1,6 +1,10 @@
 import { spawn, spawnSync } from "node:child_process";
 import open from "open";
 
+// Regex patterns for email parsing
+const EMAIL_EXTRACT_REGEX = /<(.+?)>/;
+const EMAIL_REMOVE_REGEX = /<.+?>/;
+
 export interface Email {
   id: string;
   threadId: string;
@@ -93,12 +97,12 @@ export function isGogAvailable(): boolean {
 }
 
 export class GogAuthError extends Error {
-  constructor(
-    message: string,
-    public account?: string
-  ) {
+  account?: string;
+
+  constructor(message: string, account?: string) {
     super(message);
     this.name = "GogAuthError";
+    this.account = account;
   }
 }
 
@@ -118,7 +122,7 @@ function parseGogError(stderr: string, account?: string): Error {
   return new Error(stderr);
 }
 
-async function runGogAsync(args: string[], account?: string): Promise<string> {
+function runGogAsync(args: string[], account?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("gog", args, {
       stdio: ["pipe", "pipe", "pipe"],
@@ -168,6 +172,33 @@ function decodeBase64(data: string | undefined): string {
   return Buffer.from(normalized, "base64").toString("utf-8");
 }
 
+function findTextPlainPart(parts: GogMessagePart[]): string {
+  for (const part of parts) {
+    if (part.mimeType === "text/plain" && part.body?.data) {
+      return decodeBase64(part.body.data);
+    }
+    if (part.parts) {
+      const nested = findTextPlainPart(part.parts);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+  return "";
+}
+
+function findTextHtmlPart(parts: GogMessagePart[]): string {
+  for (const part of parts) {
+    if (part.mimeType === "text/html" && part.body?.data) {
+      return decodeBase64(part.body.data)
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+  }
+  return "";
+}
+
 function extractTextBody(payload: GogMessagePart | undefined): string {
   if (!payload) {
     return "";
@@ -178,29 +209,13 @@ function extractTextBody(payload: GogMessagePart | undefined): string {
     return decodeBase64(payload.body.data);
   }
 
-  // Multipart - look for text/plain
+  // Multipart
   if (payload.parts) {
-    for (const part of payload.parts) {
-      if (part.mimeType === "text/plain" && part.body?.data) {
-        return decodeBase64(part.body.data);
-      }
-      // Nested multipart
-      if (part.parts) {
-        const nested = extractTextBody(part);
-        if (nested) {
-          return nested;
-        }
-      }
+    const plain = findTextPlainPart(payload.parts);
+    if (plain) {
+      return plain;
     }
-    // Fallback to text/html if no plain text
-    for (const part of payload.parts) {
-      if (part.mimeType === "text/html" && part.body?.data) {
-        return decodeBase64(part.body.data)
-          .replace(/<[^>]+>/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-      }
-    }
+    return findTextHtmlPart(payload.parts);
   }
 
   return "";
@@ -217,11 +232,11 @@ export class GmailClient {
     return `--account=${this.accountEmail}`;
   }
 
-  async listStarred(maxResults = 50): Promise<Email[]> {
+  listStarred(maxResults = 50): Promise<Email[]> {
     return this.search("is:starred", maxResults);
   }
 
-  async listUnread(maxResults = 50): Promise<Email[]> {
+  listUnread(maxResults = 50): Promise<Email[]> {
     // Strict filter: inbox only, exclude categories and common automated notifications
     const query = `is:unread in:inbox -category:promotions -category:social -category:updates -category:forums
 			-subject:"sign-in" -subject:"signed in" -subject:"new login" -subject:"security alert"
@@ -251,12 +266,12 @@ export class GmailClient {
 
     // gog search returns thread summaries, convert to Email format
     return result.threads.map((t) => {
-      const fromMatch = t.from.match(/<(.+?)>/) || [null, t.from];
+      const fromMatch = t.from.match(EMAIL_EXTRACT_REGEX) || [null, t.from];
       return {
         id: t.id, // Thread ID serves as message ID for our purposes
         threadId: t.id,
         subject: t.subject || "(no subject)",
-        from: t.from.replace(/<.+?>/, "").trim() || t.from,
+        from: t.from.replace(EMAIL_REMOVE_REGEX, "").trim() || t.from,
         fromEmail: fromMatch[1] || t.from,
         to: "", // Not available in search results
         date: t.date,
@@ -268,7 +283,7 @@ export class GmailClient {
     });
   }
 
-  async getMessage(id: string): Promise<Email | null> {
+  getMessage(id: string): Email | null {
     try {
       const output = runGog(
         ["gmail", "get", id, "--json", this.accountFlag],
@@ -278,13 +293,13 @@ export class GmailClient {
       const msg = JSON.parse(output);
       const headers = msg.payload?.headers;
       const from = parseHeader(headers, "From");
-      const fromMatch = from.match(/<(.+?)>/) || [null, from];
+      const fromMatch = from.match(EMAIL_EXTRACT_REGEX) || [null, from];
 
       return {
         id: msg.id,
         threadId: msg.threadId,
         subject: parseHeader(headers, "Subject") || "(no subject)",
-        from: from.replace(/<.+?>/, "").trim() || from,
+        from: from.replace(EMAIL_REMOVE_REGEX, "").trim() || from,
         fromEmail: fromMatch[1] || from,
         to: parseHeader(headers, "To"),
         date: parseHeader(headers, "Date"),
@@ -337,7 +352,7 @@ export class GmailClient {
     }
   }
 
-  async star(messageId: string): Promise<boolean> {
+  star(messageId: string): boolean {
     try {
       runGog(
         [
@@ -356,7 +371,7 @@ export class GmailClient {
     }
   }
 
-  async unstar(messageId: string): Promise<boolean> {
+  unstar(messageId: string): boolean {
     try {
       runGog(
         [
@@ -375,7 +390,7 @@ export class GmailClient {
     }
   }
 
-  async archive(messageId: string): Promise<boolean> {
+  archive(messageId: string): boolean {
     try {
       runGog(
         [
@@ -394,7 +409,7 @@ export class GmailClient {
     }
   }
 
-  async markRead(messageId: string): Promise<boolean> {
+  markRead(messageId: string): boolean {
     try {
       runGog(
         [
@@ -461,7 +476,7 @@ export class GmailClient {
     }
   }
 
-  async reply(messageId: string, message: string): Promise<boolean> {
+  reply(messageId: string, message: string): boolean {
     try {
       runGog(
         [

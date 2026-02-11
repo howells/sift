@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
-import type { ReminderListConfig } from "./config.js";
-import type { Todo, Urgency } from "./types.js";
+import type { ReminderListConfig } from "./config.ts";
+import type { Todo, Urgency } from "./types.ts";
 
 const SIFT_PREFIX = "sift:email:";
 

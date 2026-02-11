@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getAccountGroupsList, getAccounts } from "../lib/auth.js";
-import { pruneOldEntries, removeCachedAnalysis } from "../lib/cache.js";
-import { analyzeEmails, generateReminderFromEmail } from "../lib/claude.js";
-import { configExists, getReminderLists, loadConfig } from "../lib/config.js";
-import { GmailClient, isGogAvailable } from "../lib/gmail.js";
+import { getAccountGroupsList, getAccounts } from "../lib/auth.ts";
+import { pruneOldEntries, removeCachedAnalysis } from "../lib/cache.ts";
+import { analyzeEmails, generateReminderFromEmail } from "../lib/claude.ts";
+import { configExists, getReminderLists, loadConfig } from "../lib/config.ts";
+import { GmailClient, isGogAvailable } from "../lib/gmail.ts";
 import {
   completeReminderByEmail,
   completeReminderById,
@@ -12,14 +12,135 @@ import {
   getEmailReminderStates,
   isRemindctlAvailable,
   openRemindersApp,
-} from "../lib/reminders.js";
-import type { ReminderState, Todo, View } from "../lib/types.js";
+} from "../lib/reminders.ts";
+import type { ReminderState, Todo, View } from "../lib/types.ts";
 
 interface LoadingState {
   active: boolean;
   message: string;
   step: number;
   detail?: string;
+}
+
+function splitTodosIntoActiveAndBacklog(
+  todos: Todo[],
+  cutoffDate: Date,
+  reminderStates: Map<string, ReminderState>
+): { active: Todo[]; backlog: Todo[] } {
+  const active: Todo[] = [];
+  const backlog: Todo[] = [];
+
+  for (const todo of todos) {
+    const todoWithReminder = {
+      ...todo,
+      reminderState:
+        reminderStates.get(todo.emailId ?? "") ?? ("none" as ReminderState),
+    };
+
+    const todoDate = new Date(todo.date);
+    if (todoDate < cutoffDate) {
+      backlog.push(todoWithReminder);
+    } else {
+      active.push(todoWithReminder);
+    }
+  }
+
+  return { active, backlog };
+}
+
+function setupGmailClients(
+  accounts: ReturnType<typeof getAccounts>,
+  setLoading: (fn: (l: LoadingState) => LoadingState) => void
+): Map<string, GmailClient> {
+  setLoading(() => ({ active: true, message: "Connecting to Gmail", step: 1 }));
+  const clients = new Map<string, GmailClient>();
+
+  for (let i = 0; i < accounts.length; i++) {
+    const account = accounts[i];
+    setLoading((l) => ({
+      ...l,
+      detail: `${account.name} (${i + 1}/${accounts.length})`,
+    }));
+    clients.set(account.name, new GmailClient(account.email));
+  }
+
+  return clients;
+}
+
+function validateSetup(
+  setError: (msg: string | null) => void,
+  setLoading: (fn: (l: LoadingState) => LoadingState) => void
+): {
+  config: ReturnType<typeof loadConfig>;
+  reminderLists: ReturnType<typeof getReminderLists>;
+} | null {
+  if (!configExists()) {
+    setError("No config found. Run 'sift --setup' to configure.");
+    setLoading((l) => ({ ...l, active: false }));
+    return null;
+  }
+
+  if (!isGogAvailable()) {
+    setError(
+      "'gog' CLI not found. Install it first: https://github.com/howells/gog"
+    );
+    setLoading((l) => ({ ...l, active: false }));
+    return null;
+  }
+
+  const config = loadConfig();
+  const reminderLists = config ? getReminderLists(config) : null;
+
+  if (reminderLists?.length && !isRemindctlAvailable()) {
+    setError(
+      "'remindctl' CLI not found but reminder lists are configured. Install it or remove reminderLists from config."
+    );
+    setLoading((l) => ({ ...l, active: false }));
+    return null;
+  }
+
+  return { config, reminderLists };
+}
+
+function fetchAllEmails(
+  accounts: ReturnType<typeof getAccounts>,
+  clients: Map<string, GmailClient>,
+  setLoading: (fn: (l: LoadingState) => LoadingState) => void
+): Promise<
+  Array<{
+    account: string;
+    group: string;
+    emails: Awaited<ReturnType<GmailClient["listStarred"]>>;
+  }>
+> {
+  setLoading(() => ({ active: true, message: "Fetching emails", step: 2 }));
+
+  return Promise.all(
+    accounts.map(async (account) => {
+      const client = clients.get(account.name);
+      if (!client) {
+        return { account: account.name, group: account.group, emails: [] };
+      }
+      const [starred, unread] = await Promise.all([
+        client.listStarred(200),
+        client.listUnread(100),
+      ]);
+
+      const starredIds = new Set(starred.map((e) => e.id));
+      const combined = [...starred];
+      for (const email of unread) {
+        if (!starredIds.has(email.id)) {
+          combined.push(email);
+        }
+      }
+
+      return {
+        account: account.name,
+        group: account.group,
+        emails: combined,
+      };
+    })
+  );
 }
 
 export interface SiftState {
@@ -80,74 +201,19 @@ export function useSiftData(): SiftState {
   useEffect(() => {
     async function init() {
       try {
-        if (!configExists()) {
-          setError("No config found. Run 'sift --setup' to configure.");
-          setLoading((l) => ({ ...l, active: false }));
+        const setupValidation = validateSetup(setError, setLoading);
+        if (!setupValidation) {
           return;
         }
 
-        if (!isGogAvailable()) {
-          setError(
-            "'gog' CLI not found. Install it first: https://github.com/howells/gog"
-          );
-          setLoading((l) => ({ ...l, active: false }));
-          return;
-        }
-
-        const config = loadConfig();
-        const reminderLists = config ? getReminderLists(config) : null;
-
-        if (reminderLists?.length && !isRemindctlAvailable()) {
-          setError(
-            "'remindctl' CLI not found but reminder lists are configured. Install it or remove reminderLists from config."
-          );
-          setLoading((l) => ({ ...l, active: false }));
-          return;
-        }
+        const { reminderLists } = setupValidation;
 
         pruneOldEntries(90);
 
-        // Step 1: Connect to accounts
-        setLoading({ active: true, message: "Connecting to Gmail", step: 1 });
-        const clients = new Map<string, GmailClient>();
-
-        for (let i = 0; i < accounts.length; i++) {
-          const account = accounts[i];
-          setLoading((l) => ({
-            ...l,
-            detail: `${account.name} (${i + 1}/${accounts.length})`,
-          }));
-          clients.set(account.name, new GmailClient(account.email));
-        }
-
+        const clients = setupGmailClients(accounts, setLoading);
         setGmailClients(clients);
 
-        // Step 2: Fetch emails from all accounts in parallel
-        setLoading({ active: true, message: "Fetching emails", step: 2 });
-
-        const allEmails = await Promise.all(
-          accounts.map(async (account) => {
-            const client = clients.get(account.name)!;
-            const [starred, unread] = await Promise.all([
-              client.listStarred(200),
-              client.listUnread(100),
-            ]);
-
-            const starredIds = new Set(starred.map((e) => e.id));
-            const combined = [...starred];
-            for (const email of unread) {
-              if (!starredIds.has(email.id)) {
-                combined.push(email);
-              }
-            }
-
-            return {
-              account: account.name,
-              group: account.group,
-              emails: combined,
-            };
-          })
-        );
+        const allEmails = await fetchAllEmails(accounts, clients, setLoading);
 
         const totalEmails = allEmails.reduce(
           (sum, a) => sum + a.emails.length,
@@ -166,49 +232,36 @@ export function useSiftData(): SiftState {
           allEmails,
           new Date(),
           (cached, toAnalyze) => {
-            const detail =
-              toAnalyze === 0
-                ? `All ${cached} from cache`
-                : cached > 0
-                  ? `${cached} cached, analyzing ${toAnalyze} new`
-                  : `Analyzing ${toAnalyze} emails`;
+            let detail: string;
+            if (toAnalyze === 0) {
+              detail = `All ${cached} from cache`;
+            } else if (cached > 0) {
+              detail = `${cached} cached, analyzing ${toAnalyze} new`;
+            } else {
+              detail = `Analyzing ${toAnalyze} emails`;
+            }
             setLoading((l) => ({ ...l, detail }));
           }
         );
 
-        // Split into active/backlog
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-        const active: Todo[] = [];
-        const old: Todo[] = [];
 
         const defaultList = reminderLists?.[0]?.list ?? "Work";
         const reminderStates = getEmailReminderStates(defaultList);
 
-        for (const todo of result.todos) {
-          const todoWithReminder = {
-            ...todo,
-            reminderState:
-              reminderStates.get(todo.emailId ?? "") ??
-              ("none" as ReminderState),
-          };
+        const { active, backlog } = splitTodosIntoActiveAndBacklog(
+          result.todos,
+          thirtyDaysAgo,
+          reminderStates
+        );
 
-          const todoDate = new Date(todo.date);
-          if (todoDate < thirtyDaysAgo) {
-            old.push(todoWithReminder);
-          } else {
-            active.push(todoWithReminder);
-          }
-        }
+        const finalActive = reminderLists?.length
+          ? [...active, ...fetchPendingReminders(reminderLists).todos]
+          : active;
 
-        if (reminderLists && reminderLists.length > 0) {
-          const { todos: reminderTodos } = fetchPendingReminders(reminderLists);
-          active.push(...reminderTodos);
-        }
-
-        setAllTodos(active);
-        setAllBacklog(old);
+        setAllTodos(finalActive);
+        setAllBacklog(backlog);
         setLoading((l) => ({ ...l, active: false }));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
@@ -217,7 +270,7 @@ export function useSiftData(): SiftState {
     }
 
     init();
-  }, [accounts.length]);
+  }, [accounts]);
 
   // --- Filtered/sorted lists ---
 
@@ -367,9 +420,10 @@ export function useSiftData(): SiftState {
     if (!todo.isStarred && todo.emailId) {
       const client = gmailClients.get(todo.account);
       if (client) {
-        client.star(todo.emailId).then(() => {
+        const success = client.star(todo.emailId);
+        if (success) {
           updateTodoInList(todo.id, (t) => ({ ...t, isStarred: true }));
-        });
+        }
       }
     }
   }
