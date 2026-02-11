@@ -36,6 +36,14 @@ db.exec(`
     ON analyzed_emails(email_hash);
 `);
 
+function safeParseTodo(json: string): Todo | null {
+  try {
+    return JSON.parse(json) as Todo;
+  } catch {
+    return null;
+  }
+}
+
 // Prepare statements once at module level for reuse
 const stmts = {
   get: db.prepare(`
@@ -128,7 +136,7 @@ export function getCachedAnalysis(
     analyzedAt: row.analyzed_at,
     emailHash: row.email_hash,
     isTodo: row.is_todo === 1,
-    todo: row.todo_json ? JSON.parse(row.todo_json) : null,
+    todo: row.todo_json ? safeParseTodo(row.todo_json) : null,
   };
 }
 
@@ -156,7 +164,10 @@ export function getCachedTodos(emailIds: string[]): Map<string, Todo> {
   const map = new Map<string, Todo>();
 
   for (const row of rows) {
-    map.set(row.email_id, JSON.parse(row.todo_json));
+    const todo = safeParseTodo(row.todo_json);
+    if (todo) {
+      map.set(row.email_id, todo);
+    }
   }
 
   return map;

@@ -38,7 +38,13 @@ export function getEmailReminderStates(
     return new Map();
   }
 
-  const reminders: Reminder[] = JSON.parse(result.stdout);
+  let reminders: Reminder[];
+  try {
+    reminders = JSON.parse(result.stdout);
+  } catch {
+    return new Map();
+  }
+
   const states = new Map<string, ReminderState>();
 
   for (const reminder of reminders) {
@@ -83,7 +89,12 @@ export function findReminderIdByEmail(
     return null;
   }
 
-  const reminders: Reminder[] = JSON.parse(result.stdout);
+  let reminders: Reminder[];
+  try {
+    reminders = JSON.parse(result.stdout);
+  } catch {
+    return null;
+  }
 
   for (const reminder of reminders) {
     if (reminder.notes?.includes(`${SIFT_PREFIX}${emailId}`)) {

@@ -259,23 +259,30 @@ export class GmailClient {
       this.accountEmail
     );
 
-    const result: GogSearchResult = JSON.parse(output);
+    let result: GogSearchResult;
+    try {
+      result = JSON.parse(output);
+    } catch {
+      throw new Error(
+        `Failed to parse gog search output for ${this.accountEmail}`
+      );
+    }
+
     if (!result.threads) {
       return [];
     }
 
-    // gog search returns thread summaries, convert to Email format
     return result.threads.map((t) => {
       const fromMatch = t.from.match(EMAIL_EXTRACT_REGEX) || [null, t.from];
       return {
-        id: t.id, // Thread ID serves as message ID for our purposes
+        id: t.id,
         threadId: t.id,
         subject: t.subject || "(no subject)",
         from: t.from.replace(EMAIL_REMOVE_REGEX, "").trim() || t.from,
         fromEmail: fromMatch[1] || t.from,
-        to: "", // Not available in search results
+        to: "",
         date: t.date,
-        snippet: "", // Not available in search results
+        snippet: "",
         isStarred: t.labels?.includes("STARRED"),
         isUnread: t.labels?.includes("UNREAD"),
         labels: t.labels || [],

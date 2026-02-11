@@ -113,7 +113,13 @@ async function callStructured<T extends z.ZodTypeAny>(
     if (!jsonMatch) {
       throw new Error("No valid JSON in API response");
     }
-    return schema.parse(JSON.parse(jsonMatch[0]));
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      throw new Error("Malformed JSON in API response");
+    }
+    return schema.parse(parsed);
   }
 
   throw new Error(
