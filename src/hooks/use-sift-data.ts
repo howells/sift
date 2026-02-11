@@ -190,11 +190,11 @@ export function useSiftData(): SiftState {
   const [gmailClients, setGmailClients] = useState<Map<string, GmailClient>>(
     new Map()
   );
-  const [_refreshTrigger, setRefreshTrigger] = useState(0);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const autoRefreshQueued = useRef(false);
 
-  const accounts = getAccounts();
-  const accountGroups = getAccountGroupsList();
+  const accounts = useMemo(() => getAccounts(), [refreshTrigger]);
+  const accountGroups = useMemo(() => getAccountGroupsList(), [refreshTrigger]);
 
   // --- Data loading ---
 
@@ -270,7 +270,7 @@ export function useSiftData(): SiftState {
     }
 
     init();
-  }, [accounts]);
+  }, [refreshTrigger]);
 
   // --- Filtered/sorted lists ---
 
