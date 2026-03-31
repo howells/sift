@@ -42,8 +42,6 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "@ai-sdk/provider": "^3.0.8",
-    "@anthropic-ai/sdk": "^0.80.0",
     "@biomejs/biome": "^2.4.10",
     "@howells/envelope": "^0.2.1",
     "@manypkg/cli": "^0.25.1",
