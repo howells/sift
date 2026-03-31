@@ -3,44 +3,63 @@ import { render } from "ink";
 
 const args = process.argv.slice(2);
 
+// Known CLI subcommands
+const CLI_COMMANDS = new Set([
+  "list",
+  "ls",
+  "done",
+  "star",
+  "remind",
+  "open",
+  "refresh",
+  "status",
+]);
+
+// Determine if this is a CLI invocation:
+// - First arg is a known subcommand, OR
+// - --json flag is present, OR
+// - Not a TTY (piped to another process)
+const firstArg = args[0] ?? "";
+const isCliMode =
+  CLI_COMMANDS.has(firstArg) ||
+  args.includes("--json") ||
+  (!(process.stdout.isTTY || args.includes("--setup")) && args.length > 0);
+
 if (args.includes("--setup") || args.includes("-s")) {
-  // Run setup wizard
   import("./setup.tsx");
-} else if (args.includes("--help") || args.includes("-h")) {
-  console.log(`
-sift - AI-powered email triage
+} else if (
+  isCliMode ||
+  (args.includes("--help") && !process.stdout.isTTY) ||
+  (args.includes("-h") && !process.stdout.isTTY)
+) {
+  // CLI mode — structured JSON output
+  const { runCli } = await import("./cli.ts");
 
-Usage:
-  sift            Start the email triage interface
-  sift --setup    Configure accounts and credentials
-  sift --help     Show this help message
-
-Keyboard shortcuts (in app):
-  ↑/↓ or j/k     Navigate
-  Enter          Open email in browser
-  d              Mark done (unstar + mark read)
-  1-N            Filter by group
-  r              Refresh
-  q              Quit
-`);
+  // If --help/-h, route to CLI help
+  const cliArgs =
+    args.includes("--help") || args.includes("-h") ? ["help"] : args;
+  await runCli(cliArgs);
+} else if (
+  args.includes("--help") ||
+  args.includes("-h") ||
+  firstArg === "help"
+) {
+  // Human help — show both TUI and CLI usage
+  const { runCli } = await import("./cli.ts");
+  await runCli(["help"]);
   process.exit(0);
 } else {
-  // Run main app
+  // TUI mode — interactive terminal UI
   const { App } = await import("./app.tsx");
 
-  // Enter alternate screen buffer (like vim/less) - prevents scrollback pollution
-  process.stdout.write("\x1b[?1049h");
-  // Hide cursor
-  process.stdout.write("\x1b[?25l");
-  // Move cursor to top-left
-  process.stdout.write("\x1b[H");
+  process.stdout.write("\x1b[?1049h"); // Alternate screen buffer
+  process.stdout.write("\x1b[?25l"); // Hide cursor
+  process.stdout.write("\x1b[H"); // Cursor to top-left
 
   const { waitUntilExit } = render(<App />);
 
   waitUntilExit().then(() => {
-    // Show cursor
-    process.stdout.write("\x1b[?25h");
-    // Exit alternate screen buffer - restores previous terminal content
-    process.stdout.write("\x1b[?1049l");
+    process.stdout.write("\x1b[?25h"); // Show cursor
+    process.stdout.write("\x1b[?1049l"); // Restore screen
   });
 }
