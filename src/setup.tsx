@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync } from "node:fs";
-import { Box, render, Text, useApp, useInput } from "ink";
+import { Box, type Key, render, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
-import React, { useState } from "react";
+import { useEffect, useState } from "react";
 import { checkGogAuth } from "./lib/auth.ts";
 import {
   type AccountConfig,
@@ -50,11 +50,11 @@ function Setup() {
   const [error, setError] = useState<string | null>(null);
 
   // Check Claude CLI on mount
-  React.useEffect(() => {
+  useEffect(() => {
     isClaudeCliAvailable().then(setClaudeAvailable);
   }, []);
 
-  const handleMoreAccountsKey = (input: string, key: any) => {
+  const handleMoreAccountsKey = (input: string, key: Key) => {
     if (input === "y") {
       setCurrentAccount({});
       setInputValue("");
@@ -74,7 +74,7 @@ function Setup() {
     setStep("done");
   };
 
-  const handleSetupKey = (input: string, key: any) => {
+  const handleSetupKey = (input: string, key: Key) => {
     const inputQuit =
       input === "q" &&
       step !== "account_name" &&

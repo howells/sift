@@ -3,21 +3,21 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export interface AccountConfig {
-  name: string;
   email: string;
   group: string;
+  name: string;
 }
 
 export interface ReminderListConfig {
-  list: string; // Apple Reminders list name
   group: string; // Account group to associate with
+  list: string; // Apple Reminders list name
 }
 
 export interface SiftConfig {
   accounts: AccountConfig[];
-  reminderLists?: ReminderListConfig[]; // Apple Reminders lists to show
   anthropicApiKey?: string;
   preferClaudeCli?: boolean; // If true, try claude CLI first, fall back to API
+  reminderLists?: ReminderListConfig[]; // Apple Reminders lists to show
 }
 
 const CONFIG_DIR = join(homedir(), ".config", "sift");

@@ -158,8 +158,8 @@ async function callText(prompt: string): Promise<string> {
 
 interface EmailWithMeta {
   account: string;
-  group: string;
   email: Email;
+  group: string;
   hash: string;
 }
 

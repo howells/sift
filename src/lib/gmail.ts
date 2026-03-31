@@ -6,31 +6,32 @@ const EMAIL_EXTRACT_REGEX = /<(.+?)>/;
 const EMAIL_REMOVE_REGEX = /<.+?>/;
 
 export interface Email {
-  id: string;
-  threadId: string;
-  subject: string;
+  date: string;
   from: string;
   fromEmail: string;
-  to: string;
-  date: string;
-  snippet: string;
+  id: string;
   isStarred: boolean;
   isUnread: boolean;
   labels: string[];
+  snippet: string;
+  subject: string;
+  threadId: string;
+  to: string;
 }
 
 export interface EmailThread {
   id: string;
-  subject: string;
   messages: {
     id: string;
     from: string;
     date: string;
     body: string;
   }[];
+  subject: string;
 }
 
 interface GogSearchResult {
+  nextPageToken?: string;
   threads: {
     id: string;
     date: string;
@@ -39,7 +40,6 @@ interface GogSearchResult {
     labels: string[];
     messageCount: number;
   }[];
-  nextPageToken?: string;
 }
 
 interface GogThreadResult {
@@ -58,8 +58,8 @@ interface GogThreadResult {
 }
 
 interface GogMessagePart {
-  mimeType?: string;
   body?: { data?: string };
+  mimeType?: string;
   parts?: GogMessagePart[];
 }
 

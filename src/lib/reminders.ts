@@ -5,13 +5,13 @@ import type { Todo, Urgency } from "./types.ts";
 const SIFT_PREFIX = "sift:email:";
 
 export interface Reminder {
+  dueDate?: string; // ISO date string
   id: string;
-  title: string;
-  notes?: string;
   isCompleted: boolean;
   listName: string;
-  dueDate?: string; // ISO date string
+  notes?: string;
   priority?: number; // 0 = none, 1 = high, 5 = medium, 9 = low
+  title: string;
 }
 
 export type ReminderState = "none" | "pending" | "completed";
@@ -143,15 +143,15 @@ export function urgencyToPriority(urgency: Urgency): string | undefined {
 }
 
 interface CreateReminderResult {
-  success: boolean;
   alreadyExists: boolean;
-  list?: string;
   error?: string;
+  list?: string;
+  success: boolean;
 }
 
 interface ReminderOptions {
-  title?: string; // Custom title (default: todo.summary)
   notes?: string; // Custom notes (default: from/subject)
+  title?: string; // Custom title (default: todo.summary)
 }
 
 export function createReminderFromTodo(

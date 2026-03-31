@@ -17,9 +17,9 @@ import type { ReminderState, Todo, View } from "../lib/types.ts";
 
 interface LoadingState {
   active: boolean;
+  detail?: string;
   message: string;
   step: number;
-  detail?: string;
 }
 
 function splitTodosIntoActiveAndBacklog(
@@ -144,33 +144,33 @@ function fetchAllEmails(
 }
 
 export interface SiftState {
-  // Data
-  todos: Todo[];
-  backlog: Todo[];
-  currentList: Todo[];
-  loading: LoadingState;
-  error: string | null;
-
-  // View state
-  view: View;
-  selectedIndex: number;
-  selectedGroup: string | null;
   accountGroups: string[];
+  backlog: Todo[];
   backlogCount: number;
-
-  // Navigation
-  moveUp: () => void;
-  moveDown: () => void;
-  toggleBacklog: () => void;
+  createReminder: () => void;
+  currentList: Todo[];
   dismissBacklog: () => void;
-  toggleGroup: (groupIndex: number) => void;
+  error: string | null;
+  loading: LoadingState;
 
   // Actions
   markDone: () => void;
-  starTodo: () => void;
-  createReminder: () => void;
+  moveDown: () => void;
+
+  // Navigation
+  moveUp: () => void;
   openTodo: () => void;
   refresh: () => void;
+  selectedGroup: string | null;
+  selectedIndex: number;
+  starTodo: () => void;
+  // Data
+  todos: Todo[];
+  toggleBacklog: () => void;
+  toggleGroup: (groupIndex: number) => void;
+
+  // View state
+  view: View;
 }
 
 const urgencyOrder = { overdue: 0, this_week: 1, when_you_can: 2 };
@@ -193,14 +193,19 @@ export function useSiftData(): SiftState {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const autoRefreshQueued = useRef(false);
 
-  const accounts = useMemo(() => getAccounts(), [refreshTrigger]);
-  const accountGroups = useMemo(() => getAccountGroupsList(), [refreshTrigger]);
+  const [accountGroups, setAccountGroups] = useState(() =>
+    getAccountGroupsList()
+  );
 
   // --- Data loading ---
 
   useEffect(() => {
     async function init() {
       try {
+        // Re-read config on each refresh
+        const freshAccounts = getAccounts();
+        setAccountGroups(getAccountGroupsList());
+
         const setupValidation = validateSetup(setError, setLoading);
         if (!setupValidation) {
           return;
@@ -210,10 +215,14 @@ export function useSiftData(): SiftState {
 
         pruneOldEntries(90);
 
-        const clients = setupGmailClients(accounts, setLoading);
+        const clients = setupGmailClients(freshAccounts, setLoading);
         setGmailClients(clients);
 
-        const allEmails = await fetchAllEmails(accounts, clients, setLoading);
+        const allEmails = await fetchAllEmails(
+          freshAccounts,
+          clients,
+          setLoading
+        );
 
         const totalEmails = allEmails.reduce(
           (sum, a) => sum + a.emails.length,

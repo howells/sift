@@ -88,16 +88,16 @@ export function hashEmail(email: {
     email.isUnread ? "1" : "0",
   ].join("|");
 
-  return createHash("sha256").update(content).digest("hex").substring(0, 16);
+  return createHash("sha256").update(content).digest("hex").slice(0, 16);
 }
 
 interface CachedAnalysis {
-  emailId: string;
   account: string;
-  threadId: string | null;
   analyzedAt: number;
   emailHash: string;
+  emailId: string;
   isTodo: boolean;
+  threadId: string | null;
   todo: Todo | null;
 }
 

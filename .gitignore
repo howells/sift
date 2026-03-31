@@ -20,3 +20,10 @@ LOG_imapsync/
 
 # Cache
 .cache/
+
+# Standard entries
+.claude/settings.local.json
+.playwright-mcp/
+.turbo/
+*.tsbuildinfo
+.vercel

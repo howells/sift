@@ -1,51 +1,63 @@
 import { Box, Text } from "ink";
 
 interface HeaderProps {
-  groups: string[];
-  selectedGroup: string | null;
   backlogCount?: number;
+  groups: string[];
   isBacklogView?: boolean;
+  selectedGroup: string | null;
+  totalItems?: number;
 }
 
 export function Header({
-  groups,
-  selectedGroup,
   backlogCount,
+  groups,
   isBacklogView,
+  selectedGroup,
+  totalItems,
 }: HeaderProps) {
   return (
     <Box justifyContent="space-between" marginBottom={1}>
-      <Text bold color="cyan">
-        sift{isBacklogView ? " › backlog" : ""}
-      </Text>
+      <Box>
+        <Text bold color="cyan">
+          sift
+        </Text>
+        {isBacklogView && <Text dimColor> › backlog</Text>}
+        {totalItems !== undefined && !isBacklogView && (
+          <Text dimColor>
+            {" "}
+            · {totalItems} {totalItems === 1 ? "item" : "items"}
+          </Text>
+        )}
+      </Box>
       <Box>
         {groups.map((group, i) => {
-          const isSelected = selectedGroup === null || selectedGroup === group;
-          const num = i + 1;
+          const isActive = selectedGroup === null || selectedGroup === group;
           return (
             <Text key={group}>
-              <Text color="cyan">[{num}]</Text>
+              <Text color="cyan">{i + 1}</Text>
               <Text
-                color={isSelected ? "white" : "gray"}
-                dimColor={!isSelected}
+                bold={selectedGroup === group}
+                color={isActive ? "white" : "gray"}
+                dimColor={!isActive}
               >
                 {" "}
-                {group.charAt(0).toUpperCase() + group.slice(1)}
+                {group}
               </Text>
-              {i < groups.length - 1 && <Text> </Text>}
+              {i < groups.length - 1 && <Text dimColor> · </Text>}
             </Text>
           );
         })}
         {backlogCount !== undefined && backlogCount > 0 && (
           <Text>
-            {"  "}
-            <Text color="cyan">[b]</Text>
+            <Text dimColor> · </Text>
+            <Text color="cyan">b</Text>
             <Text
+              bold={isBacklogView}
               color={isBacklogView ? "yellow" : undefined}
               dimColor={!isBacklogView}
             >
               {" "}
-              Backlog ({backlogCount})
+              backlog ({backlogCount})
             </Text>
           </Text>
         )}

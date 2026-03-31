@@ -7,10 +7,9 @@ interface KeyBinding {
 
 interface StatusBarProps {
   bindings: KeyBinding[];
-  extraInfo?: string;
 }
 
-export function StatusBar({ bindings, extraInfo }: StatusBarProps) {
+export function StatusBar({ bindings }: StatusBarProps) {
   return (
     <Box
       borderBottom={false}
@@ -21,16 +20,14 @@ export function StatusBar({ bindings, extraInfo }: StatusBarProps) {
       marginTop={1}
       paddingX={1}
     >
-      <Box flexGrow={1}>
-        {bindings.map((binding, i) => (
+      <Box flexGrow={1} gap={1}>
+        {bindings.map((binding) => (
           <Text key={binding.key}>
-            <Text color="cyan">[{binding.key}]</Text>
+            <Text color="cyan">{binding.key}</Text>
             <Text dimColor> {binding.label}</Text>
-            {i < bindings.length - 1 && <Text> </Text>}
           </Text>
         ))}
       </Box>
-      {extraInfo && <Text dimColor>{extraInfo}</Text>}
     </Box>
   );
 }

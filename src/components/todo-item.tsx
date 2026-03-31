@@ -1,40 +1,28 @@
 import { Box, Text, useStdout } from "ink";
+import { relativeDeadline, relativeTime } from "../lib/time.ts";
 import type { ReminderState, Todo, TodoSource } from "../lib/types.ts";
 
-function reminderIcon(state: ReminderState, source: TodoSource): string {
+function sourceIndicator(
+  state: ReminderState,
+  source: TodoSource
+): { icon: string; color: string | undefined } {
   if (source === "reminder") {
-    return "📌";
+    return { icon: "◉", color: "magenta" };
   }
   switch (state) {
     case "pending":
-      return "☐ ";
+      return { icon: "◻", color: "blue" };
     case "completed":
-      return "✓ ";
+      return { icon: "◼", color: "green" };
     default:
-      return "  ";
+      return { icon: " ", color: undefined };
   }
-}
-
-function reminderColor(
-  state: ReminderState,
-  source: TodoSource
-): string | undefined {
-  if (source === "reminder") {
-    return "magenta";
-  }
-  if (state === "completed") {
-    return "green";
-  }
-  if (state === "pending") {
-    return "blue";
-  }
-  return undefined;
 }
 
 interface TodoItemProps {
-  todo: Todo;
   isSelected: boolean;
   showAccount?: boolean;
+  todo: Todo;
 }
 
 function truncate(str: string | undefined, maxLen: number): string {
@@ -47,32 +35,51 @@ function truncate(str: string | undefined, maxLen: number): string {
   return `${str.slice(0, maxLen - 1)}…`;
 }
 
-// Fixed column widths
-const COL_PERSON = 16;
-const COL_DATE = 12;
-const COL_ACCOUNT = 14;
+function timeDisplay(todo: Todo): { text: string; color: string | undefined } {
+  if (todo.deadline) {
+    const rel = relativeDeadline(todo.deadline);
+    if (rel === "overdue" || rel === "today") {
+      return { text: rel, color: "red" };
+    }
+    if (rel === "tomorrow") {
+      return { text: rel, color: "yellow" };
+    }
+    if (rel === "ASAP") {
+      return { text: rel, color: "red" };
+    }
+    return { text: rel, color: undefined };
+  }
+  return { text: relativeTime(todo.date), color: undefined };
+}
+
+const COL_PERSON = 14;
+const COL_TIME = 10;
+const COL_ACCOUNT = 12;
 
 export function TodoItem({
-  todo,
   isSelected,
   showAccount = true,
+  todo,
 }: TodoItemProps) {
   const { stdout } = useStdout();
-  // Subtract 2 for the paddingX={1} on the parent Box in app.tsx
   const availableWidth = (stdout?.columns || 80) - 2;
 
-  // Calculate how much space the summary column gets
-  // 2 (selector) + 2 (reminder) + 2 (star) + 1+person + 1+date + 1+account?
   const fixedWidth =
-    2 +
-    2 +
-    2 +
+    2 + // selector
+    2 + // source indicator
     1 +
     COL_PERSON +
     1 +
-    COL_DATE +
+    COL_TIME +
+    2 + // star
     (showAccount ? 1 + COL_ACCOUNT : 0);
   const summaryWidth = Math.max(20, availableWidth - fixedWidth);
+
+  const { icon, color: indicatorColor } = sourceIndicator(
+    todo.reminderState,
+    todo.source
+  );
+  const time = timeDisplay(todo);
 
   return (
     <Box>
@@ -81,13 +88,11 @@ export function TodoItem({
         {isSelected ? "▸ " : "  "}
       </Text>
 
-      {/* Reminder indicator */}
-      <Text color={reminderColor(todo.reminderState, todo.source)}>
-        {reminderIcon(todo.reminderState, todo.source)}
-      </Text>
+      {/* Source/reminder indicator */}
+      <Text color={indicatorColor}>{icon} </Text>
 
-      {/* Summary - manually truncated */}
-      <Text>{truncate(todo.summary, summaryWidth)}</Text>
+      {/* Summary */}
+      <Text bold={isSelected}>{truncate(todo.summary, summaryWidth)}</Text>
 
       {/* Star */}
       <Text color="yellow">{todo.isStarred ? " ★" : "  "}</Text>
@@ -98,12 +103,10 @@ export function TodoItem({
         {truncate(todo.person || todo.from, COL_PERSON)}
       </Text>
 
-      {/* Date */}
-      <Text dimColor={!isSelected}>
+      {/* Time */}
+      <Text color={isSelected ? time.color : undefined} dimColor={!isSelected}>
         {" "}
-        {todo.deadline
-          ? truncate(todo.deadline, COL_DATE)
-          : "-".padEnd(COL_DATE)}
+        {truncate(time.text, COL_TIME)}
       </Text>
 
       {/* Account */}

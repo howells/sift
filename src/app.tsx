@@ -1,4 +1,4 @@
-import { Box, Text, useApp, useInput, useStdout } from "ink";
+import { Box, type Key, Text, useApp, useInput, useStdout } from "ink";
 import { Header } from "./components/header.tsx";
 import { Spinner } from "./components/spinner.tsx";
 import { StatusBar } from "./components/status-bar.tsx";
@@ -7,7 +7,7 @@ import { useSiftData } from "./hooks/use-sift-data.ts";
 
 function handleKey(
   input: string,
-  key: any,
+  key: Key,
   sift: ReturnType<typeof useSiftData>,
   exit: () => void
 ) {
@@ -110,6 +110,7 @@ export function App() {
           groups={sift.accountGroups}
           isBacklogView={sift.view === "backlog"}
           selectedGroup={sift.selectedGroup}
+          totalItems={sift.currentList.length}
         />
       </Box>
 
@@ -126,26 +127,24 @@ export function App() {
           bindings={
             sift.view === "backlog"
               ? [
-                  { key: "↑↓", label: "Nav" },
-                  { key: "Enter", label: "Open" },
-                  { key: "d", label: "Done" },
-                  { key: "s", label: "Star" },
-                  { key: "t", label: "Remind" },
-                  { key: "b/Esc", label: "Back" },
-                  { key: "q", label: "Quit" },
+                  { key: "j/k", label: "nav" },
+                  { key: "⏎", label: "open" },
+                  { key: "d", label: "done" },
+                  { key: "s", label: "star" },
+                  { key: "t", label: "remind" },
+                  { key: "esc", label: "back" },
+                  { key: "q", label: "quit" },
                 ]
               : [
-                  { key: "↑↓", label: "Nav" },
-                  { key: "Enter", label: "Open" },
-                  { key: "d", label: "Done" },
-                  { key: "s", label: "Star" },
-                  { key: "t", label: "Remind" },
-                  { key: "b", label: `Backlog (${sift.backlogCount})` },
-                  { key: "r", label: "Refresh" },
-                  { key: "q", label: "Quit" },
+                  { key: "j/k", label: "nav" },
+                  { key: "⏎", label: "open" },
+                  { key: "d", label: "done" },
+                  { key: "s", label: "star" },
+                  { key: "t", label: "remind" },
+                  { key: "r", label: "refresh" },
+                  { key: "q", label: "quit" },
                 ]
           }
-          extraInfo={`${sift.currentList.length} items`}
         />
       </Box>
     </Box>

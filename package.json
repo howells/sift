@@ -1,6 +1,6 @@
 {
   "name": "@howells/sift",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Sift through your email. Surface what matters.",
   "author": "Daniel Howells",
   "license": "MIT",
@@ -38,28 +38,34 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "knip": "knip"
   },
   "devDependencies": {
     "@ai-sdk/provider": "^3.0.8",
-    "@anthropic-ai/sdk": "^0.71.2",
-    "@biomejs/biome": "^2.3.13",
-    "@howells/envelope": "^0.2.0",
+    "@anthropic-ai/sdk": "^0.80.0",
+    "@biomejs/biome": "^2.4.10",
+    "@howells/envelope": "^0.2.1",
     "@manypkg/cli": "^0.25.1",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^22.0.0",
-    "@types/react": "^18.3.0",
-    "better-sqlite3": "^12.6.2",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "better-sqlite3": "^12.8.0",
     "husky": "9.1.7",
-    "ink": "^5.1.0",
+    "ink": "^6.8.0",
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
+    "knip": "^5.83.1",
+    "lint-staged": "^16.4.0",
     "open": "^10.1.0",
-    "react": "^18.3.1",
+    "react": "^19.2.4",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "ultracite": "^7.1.1",
-    "vitest": "^4.0.17",
+    "ultracite": "^7.4.0",
+    "vitest": "^4.1.2",
     "zod": "^4.3.6"
+  },
+  "lint-staged": {
+    "*.{js,ts,jsx,tsx,json,jsonc,css}": "biome format --write --no-errors-on-unmatched"
   }
 }
