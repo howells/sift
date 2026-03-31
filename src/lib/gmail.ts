@@ -283,8 +283,8 @@ export class GmailClient {
         to: "",
         date: t.date,
         snippet: "",
-        isStarred: t.labels?.includes("STARRED"),
-        isUnread: t.labels?.includes("UNREAD"),
+        isStarred: t.labels?.includes("STARRED") ?? false,
+        isUnread: t.labels?.includes("UNREAD") ?? false,
         labels: t.labels || [],
       };
     });
@@ -311,8 +311,8 @@ export class GmailClient {
         to: parseHeader(headers, "To"),
         date: parseHeader(headers, "Date"),
         snippet: msg.snippet || "",
-        isStarred: msg.labelIds?.includes("STARRED"),
-        isUnread: msg.labelIds?.includes("UNREAD"),
+        isStarred: msg.labelIds?.includes("STARRED") ?? false,
+        isUnread: msg.labelIds?.includes("UNREAD") ?? false,
         labels: msg.labelIds || [],
       };
     } catch {
