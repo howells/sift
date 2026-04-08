@@ -22,6 +22,7 @@ LOG_imapsync/
 .cache/
 
 # Standard entries
+.arc/
 .claude/settings.local.json
 .playwright-mcp/
 .turbo/

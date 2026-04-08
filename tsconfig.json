@@ -1,16 +1,11 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "esModuleInterop": true,
-    "strict": true,
-    "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": "src",
-    "declaration": true,
-    "jsx": "react-jsx",
-    "rewriteRelativeImportExtensions": true
-  },
-  "include": ["src/**/*"]
+	"extends": "@howells/typescript-config/tsc-no-dom-app",
+	"compilerOptions": {
+		"declaration": true,
+		"jsx": "react-jsx",
+		"outDir": "dist",
+		"rewriteRelativeImportExtensions": true,
+		"rootDir": "src"
+	},
+	"include": ["src/**/*"]
 }

@@ -1,1 +1,3 @@
+packages:
+  - "."
 allowedBuildCommands: '["better-sqlite3"]'

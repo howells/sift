@@ -3,128 +3,157 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export interface AccountConfig {
-  email: string;
-  group: string;
-  name: string;
+	email: string;
+	group: string;
+	name: string;
 }
 
 export interface ReminderListConfig {
-  group: string; // Account group to associate with
-  list: string; // Apple Reminders list name
+	group: string; // Account group to associate with
+	list: string; // Apple Reminders list name
 }
 
+export interface LinearConfig {
+	apiKey?: string;
+	defaultTeam?: string;
+	userId?: string;
+}
+
+export interface CalendarConfig {
+	account?: string;
+	calendars?: string[];
+}
+
+export interface ThingsConfig {
+	list?: string;
+}
+
+export type TaskBackend = "reminders" | "things";
+
 export interface SiftConfig {
-  accounts: AccountConfig[];
-  anthropicApiKey?: string;
-  preferClaudeCli?: boolean; // If true, try claude CLI first, fall back to API
-  reminderLists?: ReminderListConfig[]; // Apple Reminders lists to show
+	accounts: AccountConfig[];
+	anthropicApiKey?: string;
+	calendar?: CalendarConfig;
+	linear?: LinearConfig;
+	preferClaudeCli?: boolean; // If true, try claude CLI first, fall back to API
+	reminderLists?: ReminderListConfig[]; // Apple Reminders lists to show
+	taskBackend?: TaskBackend;
+	things?: ThingsConfig;
 }
 
 const CONFIG_DIR = join(homedir(), ".config", "sift");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
 export function getConfigDir(): string {
-  return CONFIG_DIR;
+	return CONFIG_DIR;
 }
 
 export function configExists(): boolean {
-  return existsSync(CONFIG_FILE);
+	return existsSync(CONFIG_FILE);
 }
 
 export function loadConfig(): SiftConfig | null {
-  if (!configExists()) {
-    return null;
-  }
+	if (!configExists()) {
+		return null;
+	}
 
-  try {
-    const content = readFileSync(CONFIG_FILE, "utf-8");
-    return JSON.parse(content) as SiftConfig;
-  } catch {
-    return null;
-  }
+	try {
+		const content = readFileSync(CONFIG_FILE, "utf-8");
+		return JSON.parse(content) as SiftConfig;
+	} catch {
+		return null;
+	}
 }
 
 export function saveConfig(config: SiftConfig): void {
-  // Ensure config directory exists with restricted permissions
-  if (!existsSync(CONFIG_DIR)) {
-    mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
-  }
+	// Ensure config directory exists with restricted permissions
+	if (!existsSync(CONFIG_DIR)) {
+		mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+	}
 
-  // Config contains API keys — restrict to owner only
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
-    mode: 0o600,
-  });
+	// Config contains API keys — restrict to owner only
+	writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
+		mode: 0o600,
+	});
 }
 
 /**
  * Get unique groups from accounts
  */
 export function getAccountGroups(config: SiftConfig): string[] {
-  const groups = new Set(config.accounts.map((a) => a.group));
-  return Array.from(groups);
+	const groups = new Set(config.accounts.map((a) => a.group));
+	return Array.from(groups);
 }
 
 /**
  * Get reminder lists from config
  */
 export function getReminderLists(
-  config: SiftConfig
+	config: SiftConfig,
 ): ReminderListConfig[] | null {
-  return config.reminderLists ?? null;
+	return config.reminderLists ?? null;
+}
+
+export function getTaskBackend(config: SiftConfig | null): TaskBackend {
+	return config?.taskBackend ?? "reminders";
+}
+
+export function getThingsList(config: SiftConfig | null): string | null {
+	return config?.things?.list ?? null;
 }
 
 /**
  * Validate config has required fields
  */
 export function validateConfig(config: SiftConfig): string[] {
-  const errors: string[] = [];
+	const errors: string[] = [];
 
-  if (!config.accounts || config.accounts.length === 0) {
-    errors.push("No accounts configured");
-  }
+	if (!config.accounts || config.accounts.length === 0) {
+		errors.push("No accounts configured");
+	}
 
-  for (const account of config.accounts || []) {
-    if (!account.name) {
-      errors.push("Account missing 'name'");
-    }
-    if (!account.email) {
-      errors.push("Account missing 'email'");
-    }
-    if (!account.group) {
-      errors.push("Account missing 'group'");
-    }
-  }
+	for (const account of config.accounts || []) {
+		if (!account.name) {
+			errors.push("Account missing 'name'");
+		}
+		if (!account.email) {
+			errors.push("Account missing 'email'");
+		}
+		if (!account.group) {
+			errors.push("Account missing 'group'");
+		}
+	}
 
-  if (!config.anthropicApiKey && config.preferClaudeCli === false) {
-    errors.push("No Anthropic API key and Claude CLI disabled");
-  }
+	if (!config.anthropicApiKey && config.preferClaudeCli === false) {
+		errors.push("No Anthropic API key and Claude CLI disabled");
+	}
 
-  return errors;
+	return errors;
 }
 
 /**
  * Check if Claude CLI is available
  */
 export async function isClaudeCliAvailable(): Promise<boolean> {
-  const { spawn } = await import("node:child_process");
+	const { spawn } = await import("node:child_process");
 
-  return new Promise((resolve) => {
-    const child = spawn("claude", ["--version"], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+	return new Promise((resolve) => {
+		const child = spawn("claude", ["--version"], {
+			stdio: ["ignore", "pipe", "pipe"],
+		});
 
-    child.on("close", (code) => {
-      resolve(code === 0);
-    });
+		child.on("close", (code) => {
+			resolve(code === 0);
+		});
 
-    child.on("error", () => {
-      resolve(false);
-    });
+		child.on("error", () => {
+			resolve(false);
+		});
 
-    // Timeout after 5 seconds
-    setTimeout(() => {
-      child.kill();
-      resolve(false);
-    }, 5000);
-  });
+		// Timeout after 5 seconds
+		setTimeout(() => {
+			child.kill();
+			resolve(false);
+		}, 5000);
+	});
 }
