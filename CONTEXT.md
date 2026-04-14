@@ -16,6 +16,7 @@ Agent-first email triage CLI. `sift` reads Gmail and Apple Reminders, prioritize
 sift describe
 sift list --fields=id,summary,urgency --limit=10
 sift today --fields=date,calendar,actions
+sift places search "coffee" --fields=id,displayName,formattedAddress,rating --limit=5
 sift remind list --fields=id,title,dueDate --format=ndjson --limit=20
 sift done --input='{"id":"19d42c92f393e035"}' --dry-run
 ```
@@ -27,6 +28,7 @@ sift done --input='{"id":"19d42c92f393e035"}' --dry-run
 | `sift list` / `sift email list` | Prioritized todos | Always use `--fields`; paginate large inboxes |
 | `sift today` | Unified daily briefing | Request only the sections you need |
 | `sift cal today` | Calendar events | Prefer NDJSON for long schedules |
+| `sift places search` / `resolve` / `details` | Google Places lookups | Requires `GOOGLE_PLACES_API_KEY`; prefer `--fields` on details and shortlist reads |
 | `sift money balance` / `transactions` | Ledger passthrough reads | Use source filters before paging |
 | `sift linear mine` | Linear summary | Fields are top-level summary keys |
 | `sift notes daily` | Daily note lookup | Usually `--fields=path` is enough |
@@ -60,6 +62,7 @@ Recommended masks:
 | Decide what to do next | `id,summary,urgency,person,deadline,account` |
 | Prep an action | `id,emailId,threadId,account,source,reminderState` |
 | Status check | `config,groups,securityPosture` |
+| Place shortlist | `id,displayName,formattedAddress,rating` |
 
 ## Validation Rules
 
@@ -80,3 +83,5 @@ Recommended masks:
 - `skills/sift-read.SKILL.md`
 - `skills/sift-write.SKILL.md`
 - `skills/sift-briefing.SKILL.md`
+- `skills/github-triage.SKILL.md`
+- `skills/vercel-triage.SKILL.md`
