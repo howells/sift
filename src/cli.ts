@@ -34,6 +34,11 @@ import {
 	sortByUrgency,
 } from "./lib/pipeline.ts";
 import {
+	executePlacesCommand,
+	isGooglePlacesConfigured,
+	isGoPlacesAvailable,
+} from "./lib/places.ts";
+import {
 	addReminder,
 	completeReminder,
 	deleteReminder,
@@ -48,6 +53,24 @@ const SUPPORTED_FORMATS = ["json", "ndjson"] as const;
 const CALENDAR_FIELDS = ["calendar", "end", "time", "title"] as const;
 const LINEAR_FIELDS = ["error", "in_progress", "todo"] as const;
 const NOTES_FIELDS = ["error", "path"] as const;
+const PLACE_FIELDS = [
+	"id",
+	"name",
+	"displayName",
+	"formattedAddress",
+	"shortFormattedAddress",
+	"googleMapsUri",
+	"websiteUri",
+	"nationalPhoneNumber",
+	"rating",
+	"userRatingCount",
+	"priceLevel",
+	"types",
+	"location",
+	"businessStatus",
+	"reviews",
+	"photos",
+] as const;
 const REMINDER_DUE_FILTERS = ["all", "overdue", "today", "week"] as const;
 const REMINDER_FIELDS = [
 	"completed",
@@ -64,7 +87,9 @@ const STATUS_FIELDS = [
 	"cache",
 	"config",
 	"gogAvailable",
+	"googlePlacesConfigured",
 	"groups",
+	"goplacesAvailable",
 	"preferClaudeCli",
 	"securityPosture",
 	"taskBackend",
@@ -132,6 +157,7 @@ const DOMAIN_SUBCOMMANDS: Record<string, Set<string>> = {
 		"networth",
 	]),
 	notes: new Set(["search", "add", "daily"]),
+	places: new Set(["search", "resolve", "details"]),
 	remind: new Set(["list", "add", "done", "delete"]),
 };
 
@@ -480,6 +506,125 @@ const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
 			type: "object",
 		},
 	},
+	"places.search": {
+		args: [
+			{
+				description: "Search query text",
+				name: "query",
+				required: true,
+				type: "string",
+			},
+		],
+		description: "Search places through goplaces",
+		examples: [
+			"sift places search 'coffee' --limit=5",
+			"sift places search 'pizza' --open-now --min-rating=4 --fields=id,displayName,formattedAddress,rating",
+		],
+		flags: {
+			fields: { description: "Comma-separated place fields", type: "string" },
+			format: {
+				description: "Output format",
+				enum: [...SUPPORTED_FORMATS],
+				type: "string",
+			},
+			keyword: {
+				description: "Keyword to append to the query",
+				type: "string",
+			},
+			language: { description: "BCP-47 language code", type: "string" },
+			limit: { description: "Maximum results", type: "integer" },
+			"min-rating": { description: "Minimum rating", type: "string" },
+			"open-now": {
+				description: "Filter to currently open places",
+				type: "boolean",
+			},
+			"page-token": { description: "Delegated page token", type: "string" },
+			"price-level": {
+				description: "Comma-separated price levels",
+				type: "string",
+			},
+			"radius-m": {
+				description: "Radius in meters for location bias",
+				type: "string",
+			},
+			region: { description: "CLDR region code", type: "string" },
+			type: { description: "Included type filter", type: "string" },
+			lat: { description: "Latitude for location bias", type: "string" },
+			lng: { description: "Longitude for location bias", type: "string" },
+		},
+		kind: "read",
+		output: {
+			fields: [...PLACE_FIELDS],
+			supportsFields: true,
+			supportsNdjson: true,
+			supportsPagination: true,
+			type: "array",
+		},
+	},
+	"places.resolve": {
+		args: [
+			{
+				description: "Location string to resolve",
+				name: "location",
+				required: true,
+				type: "string",
+			},
+		],
+		description: "Resolve a location string through goplaces",
+		examples: [
+			"sift places resolve 'Soho, London' --limit=5",
+			"sift places resolve 'Heathrow' --fields=id,displayName,formattedAddress",
+		],
+		flags: {
+			fields: { description: "Comma-separated place fields", type: "string" },
+			format: {
+				description: "Output format",
+				enum: [...SUPPORTED_FORMATS],
+				type: "string",
+			},
+			language: { description: "BCP-47 language code", type: "string" },
+			limit: { description: "Maximum results", type: "integer" },
+			region: { description: "CLDR region code", type: "string" },
+		},
+		kind: "read",
+		output: {
+			fields: [...PLACE_FIELDS],
+			supportsFields: true,
+			supportsNdjson: true,
+			supportsPagination: true,
+			type: "array",
+		},
+	},
+	"places.details": {
+		args: [
+			{
+				description: "Place identifier",
+				name: "place_id",
+				required: true,
+				type: "string",
+			},
+		],
+		description: "Fetch place details through goplaces",
+		examples: [
+			"sift places details PLACE_ID --reviews",
+			"sift places details PLACE_ID --fields=id,displayName,formattedAddress,websiteUri",
+		],
+		flags: {
+			fields: { description: "Comma-separated place fields", type: "string" },
+			language: { description: "BCP-47 language code", type: "string" },
+			photos: { description: "Include photos", type: "boolean" },
+			region: { description: "CLDR region code", type: "string" },
+			reviews: { description: "Include reviews", type: "boolean" },
+		},
+		kind: "read",
+		output: {
+			fields: [...PLACE_FIELDS],
+			supportsFields: true,
+			supportsNdjson: false,
+			supportsPagination: false,
+			type: "object",
+		},
+	},
 	"cal.today": {
 		args: [],
 		description: "Show today's calendar events",
@@ -729,6 +874,46 @@ const HELP_COMMANDS = {
 		description: "Show Linear summary",
 		flags: ["--fields=..."],
 	},
+	"places details": {
+		args: ["<place_id>"],
+		description: "Fetch place details through goplaces",
+		flags: [
+			"--fields=...",
+			"--reviews",
+			"--photos",
+			"--language=...",
+			"--region=...",
+		],
+	},
+	"places resolve": {
+		args: ["<location>"],
+		description: "Resolve a location string through goplaces",
+		flags: [
+			"--fields=...",
+			"--format=json|ndjson",
+			"--limit=...",
+			"--language=...",
+			"--region=...",
+		],
+	},
+	"places search": {
+		args: ["<query>"],
+		description: "Search places through goplaces",
+		flags: [
+			"--fields=...",
+			"--format=json|ndjson",
+			"--limit=...",
+			"--keyword=...",
+			"--type=...",
+			"--open-now",
+			"--min-rating=...",
+			"--price-level=...",
+			"--lat=...",
+			"--lng=...",
+			"--radius-m=...",
+			"--page-token=...",
+		],
+	},
 	"money balance": {
 		args: [],
 		description: "List balances through @howells/ledger",
@@ -951,6 +1136,27 @@ function shapeObjectOutput(
 	}
 
 	jsonOut(applyFieldMaskToObject(input, options.fields), flags);
+}
+
+function extractPlacesItems(input: unknown): Record<string, unknown>[] | null {
+	if (Array.isArray(input)) {
+		return input.filter(
+			(item): item is Record<string, unknown> =>
+				typeof item === "object" && item !== null,
+		);
+	}
+
+	if (input && typeof input === "object") {
+		const record = input as Record<string, unknown>;
+		if (Array.isArray(record.places)) {
+			return record.places.filter(
+				(item): item is Record<string, unknown> =>
+					typeof item === "object" && item !== null,
+			);
+		}
+	}
+
+	return null;
 }
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -1179,6 +1385,7 @@ function cmdStatus(flags: Map<string, string | true>): void {
 	const hasConfig = configExists();
 	const config = hasConfig ? loadConfig() : null;
 	const gogAvailable = isGogAvailable();
+	const goplacesAvailable = isGoPlacesAvailable();
 	const taskBackend = getTaskBackend(config);
 	const accounts = hasConfig ? getAccounts() : [];
 	const groups = hasConfig ? getAccountGroupsList() : [];
@@ -1198,7 +1405,9 @@ function cmdStatus(flags: Map<string, string | true>): void {
 			},
 			config: hasConfig,
 			gogAvailable,
+			googlePlacesConfigured: isGooglePlacesConfigured(),
 			groups,
+			goplacesAvailable,
 			preferClaudeCli: config?.preferClaudeCli ?? false,
 			securityPosture:
 				"The agent is not a trusted operator. Validate IDs, prefer dry-run for mutations, and use fields or pagination to reduce context waste.",
@@ -1280,6 +1489,85 @@ async function cmdLinear(
 			return;
 		default:
 			validationErr("Usage: sift linear <mine|issue|update|create|search>");
+	}
+}
+
+function cmdPlaces(
+	subcommand: string | undefined,
+	args: string[],
+	flags: Map<string, string | true>,
+): void {
+	switch (subcommand) {
+		case "search":
+		case "resolve": {
+			const query = args[0];
+			if (!query) {
+				validationErr(`Usage: sift places ${subcommand} <query>`);
+			}
+
+			const queryError = validateAgentText(subcommand, query);
+			if (queryError) {
+				validationErr(queryError);
+			}
+
+			const result = executePlacesCommand(subcommand, [query], flags);
+			const items = extractPlacesItems(result);
+
+			if (items) {
+				shapeArrayOutput(items, flags, PLACE_FIELDS, {
+					source: "goplaces",
+				});
+				return;
+			}
+
+			if (result && typeof result === "object" && !Array.isArray(result)) {
+				if ("error" in result) {
+					jsonOut(result as Record<string, unknown>, flags);
+					return;
+				}
+
+				shapeObjectOutput(
+					result as Record<string, unknown>,
+					flags,
+					PLACE_FIELDS,
+				);
+				return;
+			}
+
+			jsonOut({ result, source: "goplaces" }, flags);
+			return;
+		}
+		case "details": {
+			const placeId = args[0];
+			if (!placeId) {
+				validationErr("Usage: sift places details <place_id>");
+			}
+
+			const placeIdValidation = validateId(placeId);
+			if (!placeIdValidation.valid) {
+				validationErr(placeIdValidation.error);
+			}
+
+			const result = executePlacesCommand("details", [placeId], flags);
+			if (result && typeof result === "object" && !Array.isArray(result)) {
+				if ("error" in result) {
+					jsonOut(result as Record<string, unknown>, flags);
+					return;
+				}
+
+				shapeObjectOutput(
+					result as Record<string, unknown>,
+					flags,
+					PLACE_FIELDS,
+				);
+				return;
+			}
+
+			jsonOut({ result, source: "goplaces" }, flags);
+			return;
+		}
+		default:
+			validationErr("Usage: sift places <search|resolve|details> [...]");
 	}
 }
 
@@ -1612,6 +1900,9 @@ Commands:
   sift remind <id>      Create Apple Reminder from email
   sift remind list      List Apple Reminders
   sift remind add       Create Apple Reminder
+  sift places search    Search places via goplaces
+  sift places resolve   Resolve a location via goplaces
+  sift places details   Fetch place details via goplaces
   sift money balance    List balances via ledger
   sift money transactions List transactions via ledger
   sift today            Unified daily briefing
@@ -1686,6 +1977,11 @@ export async function runCli(argv: string[]): Promise<void> {
 			case "linear:create":
 			case "linear:search":
 				await cmdLinear(command.split(":")[1], flags);
+				break;
+			case "places:search":
+			case "places:resolve":
+			case "places:details":
+				cmdPlaces(command.split(":")[1], args, flags);
 				break;
 			case "cal:today":
 			case "cal:week":

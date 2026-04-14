@@ -4,10 +4,25 @@ import { join } from "node:path";
 import { loadConfig } from "./config.ts";
 
 const LINEAR_TOKEN_REGEX = /^LINEAR=(.+)$/m;
+const LINEAR_GRAPHQL_ENDPOINT = "https://api.linear.app/graphql";
+const LINEAR_PAGE_SIZE = 100;
 
 export interface ToolDiscoveryItem {
 	description: string;
 	name: string;
+}
+
+interface LinearConnectionPage {
+	nodes?: Array<{ id?: string }>;
+	pageInfo?: {
+		endCursor?: string | null;
+		hasNextPage?: boolean;
+	};
+}
+
+function readLinearTokenFromEnv(): string | null {
+	const envToken = process.env.LINEAR?.trim();
+	return envToken ? envToken : null;
 }
 
 export function buildToolDiscovery(): ToolDiscoveryItem[] {
@@ -45,18 +60,103 @@ export function getLinearApiKey(): string | null {
 		return configKey;
 	}
 
+	const envKey = readLinearTokenFromEnv();
+	if (envKey) {
+		return envKey;
+	}
+
 	const secrets = loadSecretsFile();
 	const match = secrets.match(LINEAR_TOKEN_REGEX);
 	return match?.[1]?.trim() ?? null;
 }
 
-export function getLinearSummary():
-	| { in_progress: number; todo: number }
-	| { error: string } {
+async function fetchAssignedIssuesPage(
+	apiKey: string,
+	stateType: "started" | "unstarted",
+	after?: string,
+): Promise<LinearConnectionPage> {
+	const afterClause = after ? `, after: "${after}"` : "";
+	const query = `query {
+  viewer {
+    assignedIssues(first: ${LINEAR_PAGE_SIZE}${afterClause}, filter: { state: { type: { eq: "${stateType}" } } }) {
+      nodes { id }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}`;
+
+	const response = await fetch(LINEAR_GRAPHQL_ENDPOINT, {
+		body: JSON.stringify({ query }),
+		headers: {
+			Authorization: apiKey,
+			"Content-Type": "application/json",
+		},
+		method: "POST",
+	});
+
+	if (!response.ok) {
+		throw new Error(`Linear API returned ${response.status}`);
+	}
+
+	const payload = (await response.json()) as {
+		data?: {
+			viewer?: {
+				assignedIssues?: LinearConnectionPage;
+			};
+		};
+		errors?: Array<{ message?: string }>;
+	};
+
+	if (payload.errors?.length) {
+		throw new Error(payload.errors[0]?.message || "Linear API error");
+	}
+
+	return payload.data?.viewer?.assignedIssues ?? {};
+}
+
+async function countAssignedIssues(
+	apiKey: string,
+	stateType: "started" | "unstarted",
+): Promise<number> {
+	let count = 0;
+	let cursor: string | undefined;
+
+	for (;;) {
+		const page = await fetchAssignedIssuesPage(apiKey, stateType, cursor);
+		count += page.nodes?.length ?? 0;
+
+		if (!page.pageInfo?.hasNextPage || !page.pageInfo.endCursor) {
+			return count;
+		}
+
+		cursor = page.pageInfo.endCursor;
+	}
+}
+
+export async function getLinearSummary(): Promise<
+	{ in_progress: number; todo: number } | { error: string }
+> {
 	const apiKey = getLinearApiKey();
 	if (!apiKey) {
 		return { error: "LINEAR token not configured" };
 	}
 
-	return { error: "Linear summary not implemented yet" };
+	try {
+		const [inProgress, todo] = await Promise.all([
+			countAssignedIssues(apiKey, "started"),
+			countAssignedIssues(apiKey, "unstarted"),
+		]);
+
+		return {
+			in_progress: inProgress,
+			todo,
+		};
+	} catch (error) {
+		return {
+			error:
+				error instanceof Error
+					? error.message
+					: "Failed to load Linear summary",
+		};
+	}
 }
