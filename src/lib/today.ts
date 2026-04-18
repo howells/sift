@@ -56,6 +56,7 @@ async function toSection(
 	}
 }
 
+/** Build the unified daily briefing: actions, calendar, Linear issues, and balances. */
 export async function aggregateToday(
 	dependencies: TodayDependencies = {},
 ): Promise<Record<string, unknown>> {

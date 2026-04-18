@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 
+/** Return a structured error for when places functionality is unavailable. */
 export function buildPlacesUnavailable(
 	reason: "goplaces" | "api-key" | "unsupported",
 ): { error: string; source: string } {
@@ -22,6 +23,7 @@ export function buildPlacesUnavailable(
 	}
 }
 
+/** Check if the goplaces CLI is installed and responsive. */
 export function isGoPlacesAvailable(): boolean {
 	const result = spawnSync("goplaces", ["--version"], {
 		encoding: "utf-8",
@@ -32,6 +34,7 @@ export function isGoPlacesAvailable(): boolean {
 	return result.status === 0;
 }
 
+/** Check if the GOOGLE_PLACES_API_KEY environment variable is set. */
 export function isGooglePlacesConfigured(): boolean {
 	return Boolean(process.env.GOOGLE_PLACES_API_KEY?.trim());
 }
@@ -77,6 +80,7 @@ function mapFlags(flags: Map<string, string | true>): string[] {
 	return result;
 }
 
+/** Run a goplaces subcommand (search, resolve, details) and return parsed JSON. */
 export function executePlacesCommand(
 	subcommand: string,
 	args: string[],

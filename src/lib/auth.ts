@@ -8,11 +8,13 @@ import { getAccountGroups, loadConfig } from "./config.ts";
 
 export type { AccountConfig } from "./config.ts";
 
+/** Return all configured Gmail accounts. */
 export function getAccounts(): AccountConfig[] {
 	const config = loadConfig();
 	return config?.accounts || [];
 }
 
+/** Return the list of unique account group names. */
 export function getAccountGroupsList(): string[] {
 	const config = loadConfig();
 	return config ? getAccountGroups(config) : [];

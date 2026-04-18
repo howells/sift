@@ -43,6 +43,7 @@ export type ProgressCallback = (
 
 // --- Validation ---
 
+/** Check that config, gog, and optional remindctl are available. */
 export function validateEnvironment(): {
 	config: SiftConfig;
 	error: string | null;
@@ -87,6 +88,7 @@ export function validateEnvironment(): {
 
 // --- Core pipeline ---
 
+/** Fetch emails from all accounts, analyze with Claude, and split into active/backlog. */
 export async function fetchAndAnalyze(
 	onProgress?: ProgressCallback,
 ): Promise<SiftData> {
@@ -192,12 +194,14 @@ export async function fetchAndAnalyze(
 
 const urgencyOrder = { overdue: 0, this_week: 1, when_you_can: 2 };
 
+/** Sort todos by urgency: overdue first, then this_week, then when_you_can. */
 export function sortByUrgency(todos: Todo[]): Todo[] {
 	return [...todos].sort(
 		(a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency],
 	);
 }
 
+/** Filter todos to only those belonging to a specific account group. */
 export function filterByGroup(todos: Todo[], group: string): Todo[] {
 	return todos.filter((t) => t.group === group);
 }
@@ -210,12 +214,14 @@ export interface ActionResult {
 	success: boolean;
 }
 
+/** Find a todo by its ID, email ID, or thread ID. */
 export function findTodoById(todos: Todo[], id: string): Todo | undefined {
 	return todos.find(
 		(t) => t.id === id || t.emailId === id || t.threadId === id,
 	);
 }
 
+/** Mark a todo as done: unstar/mark-read for emails, complete for reminders. */
 export async function executeDone(
 	todo: Todo,
 	clients: Map<string, GmailClient>,
@@ -264,6 +270,7 @@ export async function executeDone(
 	};
 }
 
+/** Star an email-backed todo in Gmail. */
 export function executeStar(
 	todo: Todo,
 	clients: Map<string, GmailClient>,
@@ -299,6 +306,7 @@ export function executeStar(
 	return { action: "star", id: todo.id, success };
 }
 
+/** Create an Apple Reminder or Things todo from an email-backed todo. */
 export async function executeRemind(
 	todo: Todo,
 	clients: Map<string, GmailClient>,
@@ -367,6 +375,7 @@ export async function executeRemind(
 	};
 }
 
+/** Return a Gmail web URL for a todo's thread. */
 export function executeOpen(
 	todo: Todo,
 	clients: Map<string, GmailClient>,

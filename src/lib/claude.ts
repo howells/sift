@@ -159,6 +159,7 @@ Good examples:
 - "Book flights for NYC trip (March 15-18)"`,
 });
 
+/** Parse and validate raw LLM output into a typed AnalysisResult. */
 export function parseEmailAnalysisResult(input: unknown): AnalysisResult {
 	return EmailAnalysisSchema.parse(input);
 }

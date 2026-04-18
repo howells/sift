@@ -78,6 +78,7 @@ function normalizeEvents(
 	}));
 }
 
+/** Fetch today's calendar events from the first available Google account. */
 export function getCalendarToday(): CalendarEvent[] | { error: string } {
 	const accounts = getCalendarAccounts();
 	let lastError = "No calendar account configured";

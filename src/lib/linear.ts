@@ -25,6 +25,7 @@ function readLinearTokenFromEnv(): string | null {
 	return envToken ? envToken : null;
 }
 
+/** Return the list of external CLI tools available for agent discovery. */
 export function buildToolDiscovery(): ToolDiscoveryItem[] {
 	return [
 		{ name: "bird", description: "Twitter/X operations" },
@@ -54,6 +55,7 @@ function loadSecretsFile(): string {
 	return readFileSync(path, "utf8");
 }
 
+/** Resolve the Linear API key from config, environment, or dotfiles secrets. */
 export function getLinearApiKey(): string | null {
 	const configKey = loadConfig()?.linear?.apiKey;
 	if (configKey) {
@@ -133,6 +135,7 @@ async function countAssignedIssues(
 	}
 }
 
+/** Fetch a summary of assigned Linear issues (in-progress and todo counts). */
 export async function getLinearSummary(): Promise<
 	{ in_progress: number; todo: number } | { error: string }
 > {

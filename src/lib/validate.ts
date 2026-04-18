@@ -21,6 +21,7 @@ function hasControlChars(str: string): boolean {
 	return false;
 }
 
+/** Validate an ID is non-empty, alphanumeric, and free of traversal attacks. */
 export function validateId(id: string): ValidationResult {
 	if (!id || id.length === 0) {
 		return { valid: false, error: "ID is required" };
@@ -55,6 +56,7 @@ export function validateId(id: string): ValidationResult {
 	return { valid: true };
 }
 
+/** Validate that a group name exists in the configured groups list. */
 export function validateGroup(
 	group: string,
 	validGroups: string[],
@@ -73,6 +75,7 @@ export function validateGroup(
 	return { valid: true };
 }
 
+/** Validate that all comma-separated field names are in the allowed set. */
 export function validateFields(
 	fields: string,
 	validFields: string[],

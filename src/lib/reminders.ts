@@ -154,6 +154,7 @@ interface ReminderOptions {
 	title?: string; // Custom title (default: todo.summary)
 }
 
+/** Create an Apple Reminder from an email-backed todo, with duplicate detection. */
 export function createReminderFromTodo(
 	todo: Todo,
 	list = "Work",

@@ -1,5 +1,6 @@
 import { runCli as runLedgerCli } from "@howells/ledger";
 
+/** Return a structured error for when a money data source is unavailable. */
 export function buildMoneyUnavailable(source: "ledger" | "offledger"): {
 	error: string;
 	source: string;
@@ -22,6 +23,7 @@ function mapFlags(flags: Map<string, string | true>): string[] {
 	return result;
 }
 
+/** Delegate a money subcommand (balance, transactions) to @howells/ledger. */
 export async function executeLedgerMoneyCommand(
 	subcommand: string,
 	flags: Map<string, string | true>,

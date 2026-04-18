@@ -52,6 +52,7 @@ function hasControlChars(value: string): boolean {
 	return false;
 }
 
+/** Validate agent-provided text input for length and control characters. */
 export function validateAgentText(label: string, value: string): string | null {
 	if (!value) {
 		return `${label} is required`;
@@ -68,6 +69,7 @@ export function validateAgentText(label: string, value: string): string | null {
 	return null;
 }
 
+/** Validate an agent-provided identifier, rejecting path traversal and query fragments. */
 export function validateAgentIdentifier(
 	label: string,
 	value: string,
@@ -92,6 +94,7 @@ export function validateAgentIdentifier(
 	return null;
 }
 
+/** Validate that a string is a parseable ISO-8601 date. */
 export function validateIsoDate(label: string, value: string): string | null {
 	const textError = validateAgentText(label, value);
 	if (textError) {
@@ -105,6 +108,7 @@ export function validateIsoDate(label: string, value: string): string | null {
 	return null;
 }
 
+/** Filter each item in an array to only the requested comma-separated fields. */
 export function applyFieldMaskToArray<T extends object>(
 	items: T[],
 	fields: string | undefined,
@@ -123,6 +127,7 @@ export function applyFieldMaskToArray<T extends object>(
 	);
 }
 
+/** Filter an object to only the requested comma-separated fields. */
 export function applyFieldMaskToObject(
 	input: object,
 	fields: string | undefined,
@@ -148,6 +153,7 @@ export function applyFieldMaskToObject(
 	return output;
 }
 
+/** Extract a non-negative integer from a CLI flag map, returning null if absent or invalid. */
 export function getIntegerFlag(
 	flags: Map<string, string | true>,
 	key: string,
@@ -165,6 +171,7 @@ export function getIntegerFlag(
 	return value;
 }
 
+/** Slice an array by offset/limit and return pagination metadata. */
 export function paginate<T>(
 	items: T[],
 	options: { limit: number | null; offset: number | null; pageAll: boolean },
@@ -213,6 +220,7 @@ function sanitizeText(value: string): string {
 		.join("\n");
 }
 
+/** Recursively strip control characters and tag suspicious prompt-injection lines. */
 export function sanitizeForAgentOutput(value: unknown): unknown {
 	if (typeof value === "string") {
 		return sanitizeText(value);
@@ -233,6 +241,7 @@ export function sanitizeForAgentOutput(value: unknown): unknown {
 	return value;
 }
 
+/** Read a JSON object from the `--input` flag value or stdin (when `--input=-`). */
 export async function readJsonInput(
 	flags: Map<string, string | true>,
 ): Promise<Record<string, unknown> | null> {
@@ -266,6 +275,7 @@ export async function readJsonInput(
 	return null;
 }
 
+/** Write structured output to stdout as JSON or NDJSON depending on the `--format` flag. */
 export function writeAgentOutput(
 	data: object,
 	flags?: Map<string, string | true>,

@@ -44,14 +44,17 @@ export interface SiftConfig {
 const CONFIG_DIR = join(homedir(), ".config", "sift");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
+/** Return the path to the sift configuration directory (~/.config/sift). */
 export function getConfigDir(): string {
 	return CONFIG_DIR;
 }
 
+/** Check whether a config file exists on disk. */
 export function configExists(): boolean {
 	return existsSync(CONFIG_FILE);
 }
 
+/** Load and parse the config file, returning null if missing or invalid. */
 export function loadConfig(): SiftConfig | null {
 	if (!configExists()) {
 		return null;
@@ -65,6 +68,7 @@ export function loadConfig(): SiftConfig | null {
 	}
 }
 
+/** Write config to disk with owner-only permissions (0600). */
 export function saveConfig(config: SiftConfig): void {
 	// Ensure config directory exists with restricted permissions
 	if (!existsSync(CONFIG_DIR)) {
@@ -94,10 +98,12 @@ export function getReminderLists(
 	return config.reminderLists ?? null;
 }
 
+/** Return the configured task backend, defaulting to "reminders". */
 export function getTaskBackend(config: SiftConfig | null): TaskBackend {
 	return config?.taskBackend ?? "reminders";
 }
 
+/** Return the configured Things list name, or null if not set. */
 export function getThingsList(config: SiftConfig | null): string | null {
 	return config?.things?.list ?? null;
 }

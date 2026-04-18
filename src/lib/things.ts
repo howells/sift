@@ -62,11 +62,13 @@ function buildThingsNotes(todo: Todo, notes?: string): string {
 	return lines.join("\n");
 }
 
+/** Check if Things 3 is installed. */
 export function isThingsAvailable(): boolean {
 	const result = spawnSync("open", ["-Ra", "Things3"], { stdio: "pipe" });
 	return result.status === 0;
 }
 
+/** Build a things:///add URL from the given options. */
 export function buildThingsAddUrl(
 	input: ThingsCreateOptions & { title: string },
 ): string {
@@ -89,6 +91,7 @@ export function buildThingsAddUrl(
 	return `things:///add?${params.toString()}`;
 }
 
+/** Create a Things todo by opening a things:/// URL. */
 export function createThingsTodo(
 	input: ThingsCreateOptions & { title: string },
 ): ThingsCreateResult {
@@ -113,6 +116,7 @@ export function createThingsTodo(
 	};
 }
 
+/** Create a Things todo from a sift Todo, using config for list and deadline handling. */
 export function createThingsTodoFromTodo(
 	todo: Todo,
 	config: SiftConfig | null,

@@ -4,6 +4,14 @@
 	"description": "Sift through your email. Surface what matters.",
 	"author": "Daniel Howells",
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+ssh://git@github.com/howells/sift.git"
+	},
+	"bugs": {
+		"url": "https://github.com/howells/sift/issues"
+	},
+	"homepage": "https://github.com/howells/sift#readme",
 	"type": "module",
 	"bin": {
 		"sift": "./dist/index.js"
@@ -65,6 +73,6 @@
 		"zod": "^4.3.6"
 	},
 	"lint-staged": {
-		"*.{js,ts,jsx,tsx,json,jsonc,css}": "biome format --write --no-errors-on-unmatched"
+		"*.{js,ts,jsx,tsx,json,jsonc,css}": "howells-format"
 	}
 }

@@ -22,6 +22,7 @@ function runRemindctl(args: string[]): Record<string, unknown> {
 	}
 }
 
+/** List Apple Reminders via remindctl. */
 export function listReminders(args: string[]): Record<string, unknown> {
 	return runRemindctl([
 		"list",
@@ -30,14 +31,17 @@ export function listReminders(args: string[]): Record<string, unknown> {
 	]);
 }
 
+/** Create a new Apple Reminder via remindctl. */
 export function addReminder(args: string[]): Record<string, unknown> {
 	return runRemindctl(["add", ...args]);
 }
 
+/** Mark an Apple Reminder as complete via remindctl. */
 export function completeReminder(args: string[]): Record<string, unknown> {
 	return runRemindctl(["complete", ...args]);
 }
 
+/** Delete an Apple Reminder via remindctl. */
 export function deleteReminder(args: string[]): Record<string, unknown> {
 	return runRemindctl(["delete", ...args]);
 }

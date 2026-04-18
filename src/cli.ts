@@ -1159,6 +1159,7 @@ function extractPlacesItems(input: unknown): Record<string, unknown>[] | null {
 	return null;
 }
 
+/** Parse raw argv into a command path, positional args, and flag map. */
 export function parseArgs(argv: string[]): ParsedArgs {
 	const first = argv[0] || "help";
 	const second = argv[1];
@@ -1927,6 +1928,7 @@ Examples:
 `);
 }
 
+/** Entry point for the CLI -- dispatches to the appropriate command handler. */
 export async function runCli(argv: string[]): Promise<void> {
 	const { command, args, flags } = parseArgs(argv);
 

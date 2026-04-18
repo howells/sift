@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 
+/** Retrieve today's daily note path from Obsidian via obsi CLI. */
 export function getDailyNote(): { path?: string; error?: string } {
 	const result = spawnSync("obsi", ["daily", "--json"], {
 		encoding: "utf-8",
