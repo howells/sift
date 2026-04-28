@@ -29,6 +29,24 @@ function readLinearTokenFromEnv(): string | null {
 export function buildToolDiscovery(): ToolDiscoveryItem[] {
 	return [
 		{ name: "bird", description: "Twitter/X operations" },
+		{
+			name: "ledger",
+			description:
+				"Financial I/O across Starling, Xero, Stripe, Wise, and Revolut",
+		},
+		{
+			name: "starlingcli",
+			description: "Starling Bank CLI (read-only)",
+		},
+		{
+			name: "revolutcli",
+			description: "Revolut Business CLI (read-only)",
+		},
+		{
+			name: "wisecli",
+			description: "Wise (TransferWise) CLI (read-only)",
+		},
+		{ name: "motif", description: "Agent-first AI image generation (fal.ai)" },
 		{ name: "falcon", description: "AI image generation" },
 		{ name: "granola", description: "Meeting notes export" },
 		{ name: "granola-sync", description: "Sync meetings to Obsidian" },
