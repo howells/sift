@@ -1,4 +1,9 @@
-import { createClaudeCodeClient, createEnvelope } from "@howells/envelope";
+import {
+	type CliClient,
+	createClaudeCodeClient,
+	createEnvelope,
+	createGeminiClient,
+} from "@howells/envelope";
 import { z } from "zod";
 import { cacheAnalysisBatch, getCachedAnalysis, hashEmail } from "./cache.ts";
 import type { Email } from "./gmail.ts";
@@ -38,16 +43,47 @@ const ReminderContentSchema = z.object({
 export type ReminderContent = z.infer<typeof ReminderContentSchema>;
 
 // --- Envelope client ---
+//
+// When running nested inside Claude Code (CLAUDECODE=1), spawning a child
+// `claude` CLI hangs on auth/IPC contention with the host session. Route to
+// Gemini instead — separate binary, separate auth, no contention. When run
+// standalone, keep using the user's Claude Code subscription.
 
-const client = createClaudeCodeClient({
-	model: "sonnet",
-	maxBudgetUsd: 5,
-	timeoutMs: 300_000,
-	options: {
-		retries: 1,
-		retryDelayMs: 800,
-	},
-});
+function buildClient(): CliClient {
+	if (process.env.CLAUDECODE === "1") {
+		return createGeminiClient({
+			model: "gemini-3-flash-preview",
+			timeoutMs: 300_000,
+			options: { approvalMode: "plan" },
+		});
+	}
+	return createClaudeCodeClient({
+		model: "sonnet",
+		maxBudgetUsd: 5,
+		timeoutMs: 300_000,
+		options: {
+			retries: 1,
+			retryDelayMs: 800,
+		},
+	});
+}
+
+const client = buildClient();
+
+/**
+ * Human-readable label for the active LLM provider, suitable for progress
+ * messages. Reflects the runtime routing in `buildClient`.
+ */
+export function getActiveProviderLabel(): string {
+	switch (client.tool) {
+		case "gemini":
+			return "Gemini";
+		case "codex":
+			return "Codex";
+		default:
+			return "Claude";
+	}
+}
 
 // --- Envelopes (typed LLM functions) ---
 
@@ -173,9 +209,17 @@ interface EmailWithMeta {
 	hash: string;
 }
 
+function emitWarning(payload: Record<string, unknown>): void {
+	process.stderr.write(`${JSON.stringify({ warning: payload })}\n`);
+}
+
 /**
  * Analyze emails and extract time-aware todos.
  * Uses SQLite cache to avoid re-analyzing unchanged emails.
+ *
+ * On LLM failure (or when nested inside Claude Code without an API key),
+ * returns cached todos only and emits a structured warning to stderr.
+ * Failed batches are intentionally NOT cached so they will be retried next run.
  */
 export async function analyzeEmails(
 	emails: { account: string; group: string; emails: Email[] }[],
@@ -215,6 +259,8 @@ export async function analyzeEmails(
 	const BATCH_SIZE = 50;
 	const allNewTodos: Todo[] = [];
 	const todayStr = today.toISOString().split("T")[0];
+	let failedBatches = 0;
+	let skippedEmails = 0;
 
 	for (let i = 0; i < uncachedEmails.length; i += BATCH_SIZE) {
 		const batch = uncachedEmails.slice(i, i + BATCH_SIZE);
@@ -242,11 +288,25 @@ export async function analyzeEmails(
 			isUnread: e.isUnread,
 		}));
 
-		const result = await analyzeEmailBatch({
-			today: todayStr,
-			batchLabel: `batch ${batchNum}/${totalBatches}`,
-			emails: emailSummaries,
-		});
+		let result: AnalysisResult;
+		try {
+			result = await analyzeEmailBatch({
+				today: todayStr,
+				batchLabel: `batch ${batchNum}/${totalBatches}`,
+				emails: emailSummaries,
+			});
+		} catch (error) {
+			// Don't cache — let the next run retry these emails.
+			failedBatches += 1;
+			skippedEmails += batch.length;
+			emitWarning({
+				reason: "llm_batch_failed",
+				batch: `${batchNum}/${totalBatches}`,
+				skipped: batch.length,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			continue;
+		}
 
 		const batchTodos: Todo[] = result.todos.map((todo) => ({
 			...todo,
@@ -275,6 +335,16 @@ export async function analyzeEmails(
 
 		cacheAnalysisBatch(cacheEntries);
 		allNewTodos.push(...batchTodos);
+	}
+
+	if (failedBatches > 0) {
+		emitWarning({
+			reason: "partial_analysis",
+			failedBatches,
+			skipped: skippedEmails,
+			message:
+				"Some email batches failed to analyze. Cached todos returned; failed batches will be retried on the next run.",
+		});
 	}
 
 	return { todos: [...cachedTodos, ...allNewTodos] };

@@ -5,7 +5,11 @@
 import type { AccountConfig } from "./auth.ts";
 import { getAccountGroupsList, getAccounts } from "./auth.ts";
 import { pruneOldEntries, removeCachedAnalysis } from "./cache.ts";
-import { analyzeEmails, generateReminderFromEmail } from "./claude.ts";
+import {
+	analyzeEmails,
+	generateReminderFromEmail,
+	getActiveProviderLabel,
+} from "./claude.ts";
 import {
 	configExists,
 	getReminderLists,
@@ -135,26 +139,23 @@ export async function fetchAndAnalyze(
 
 	// Step 3: Analyze
 	const totalEmails = allEmails.reduce((sum, a) => sum + a.emails.length, 0);
-	onProgress?.(3, "Analyzing with Claude", `${totalEmails} emails`);
+	const analyzingLabel = `Analyzing with ${getActiveProviderLabel()}`;
+	onProgress?.(3, analyzingLabel, `${totalEmails} emails`);
 
 	const result = await analyzeEmails(
 		allEmails,
 		new Date(),
 		(cached, toAnalyze) => {
 			if (toAnalyze === 0) {
-				onProgress?.(3, "Analyzing with Claude", `All ${cached} from cache`);
+				onProgress?.(3, analyzingLabel, `All ${cached} from cache`);
 			} else if (cached > 0) {
 				onProgress?.(
 					3,
-					"Analyzing with Claude",
+					analyzingLabel,
 					`${cached} cached, analyzing ${toAnalyze} new`,
 				);
 			} else {
-				onProgress?.(
-					3,
-					"Analyzing with Claude",
-					`Analyzing ${toAnalyze} emails`,
-				);
+				onProgress?.(3, analyzingLabel, `Analyzing ${toAnalyze} emails`);
 			}
 		},
 	);
