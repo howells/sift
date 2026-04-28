@@ -61,8 +61,6 @@ This plan treats references to "Claude Code" in the spec as "the current coding 
   Owns Linear REST client and cache invalidation hooks.
 - `src/lib/today.ts`
   Owns per-domain aggregation, timeout handling, and partial-failure assembly.
-- `src/lib/notes.ts`
-  Owns `obsi` wrapper or vault fallback.
 - `src/lib/calendar.ts`
   Owns `gog calendar` wrapper.
 - `src/lib/reminders-cli.ts`
@@ -596,7 +594,6 @@ None in the initial batch. Both CLIs are primarily JSON-oriented and are better 
   <files>
     <create>/Users/danielhowells/Sites/sift/src/lib/linear.ts</create>
     <create>/Users/danielhowells/Sites/sift/src/lib/calendar.ts</create>
-    <create>/Users/danielhowells/Sites/sift/src/lib/notes.ts</create>
     <create>/Users/danielhowells/Sites/sift/src/lib/reminders-cli.ts</create>
     <create>/Users/danielhowells/Sites/sift/src/lib/linear.test.ts</create>
     <modify>/Users/danielhowells/Sites/sift/src/lib/config.ts</modify>
@@ -609,7 +606,7 @@ None in the initial batch. Both CLIs are primarily JSON-oriented and are better 
     /Users/danielhowells/Sites/sift/CONTEXT.md
   </read_first>
   <action>
-    Add initial `linear`, `cal`, `notes`, and top-level `remind` command foundations with stable JSON contracts.
+    Add initial `linear`, `cal`, and top-level `remind` command foundations with stable JSON contracts.
     Implement `sift help --json` so it describes wrapped subcommands plus the non-wrapped tool discovery list from the spec.
     Cache Linear issue lookups in SQLite with explicit invalidation on update commands.
   </action>

@@ -1,0 +1,8 @@
+{
+	"mcpServers": {
+		"sift": {
+			"command": "node",
+			"args": ["./dist/index.js", "mcp"]
+		}
+	}
+}

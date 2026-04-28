@@ -22,7 +22,6 @@ import { configExists, getTaskBackend, loadConfig } from "./lib/config.ts";
 import { isGogAvailable } from "./lib/gmail.ts";
 import { buildToolDiscovery, getLinearSummary } from "./lib/linear.ts";
 import { executeLedgerMoneyCommand } from "./lib/money.ts";
-import { getDailyNote } from "./lib/notes.ts";
 import {
 	executeDone,
 	executeOpen,
@@ -52,7 +51,6 @@ const VERSION = "0.2.0";
 const SUPPORTED_FORMATS = ["json", "ndjson"] as const;
 const CALENDAR_FIELDS = ["calendar", "end", "time", "title"] as const;
 const LINEAR_FIELDS = ["error", "in_progress", "todo"] as const;
-const NOTES_FIELDS = ["error", "path"] as const;
 const PLACE_FIELDS = [
 	"id",
 	"name",
@@ -156,12 +154,11 @@ const DOMAIN_SUBCOMMANDS: Record<string, Set<string>> = {
 		"burn",
 		"networth",
 	]),
-	notes: new Set(["search", "add", "daily"]),
 	places: new Set(["search", "resolve", "details"]),
 	remind: new Set(["list", "add", "done", "delete"]),
 };
 
-const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
+export const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
 	help: {
 		args: [],
 		description: "Show command summary",
@@ -652,27 +649,6 @@ const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
 			type: "array",
 		},
 	},
-	"notes.daily": {
-		args: [],
-		description: "Show today's daily note",
-		examples: ["sift notes daily --fields=path"],
-		flags: {
-			fields: { description: "Comma-separated note fields", type: "string" },
-			format: {
-				description: "Output format",
-				enum: [...SUPPORTED_FORMATS],
-				type: "string",
-			},
-		},
-		kind: "read",
-		output: {
-			fields: [...NOTES_FIELDS],
-			supportsFields: true,
-			supportsNdjson: false,
-			supportsPagination: false,
-			type: "object",
-		},
-	},
 	"remind.list": {
 		args: [],
 		description: "List Apple Reminders via remindctl",
@@ -940,11 +916,6 @@ const HELP_COMMANDS = {
 			"--offset=...",
 			"--page-all",
 		],
-	},
-	"notes daily": {
-		args: [],
-		description: "Show today's daily note",
-		flags: ["--fields=..."],
 	},
 	open: {
 		args: ["<id>"],
@@ -1597,23 +1568,6 @@ function cmdCalendar(
 	}
 }
 
-function cmdNotes(
-	subcommand: string | undefined,
-	flags: Map<string, string | true>,
-): void {
-	switch (subcommand) {
-		case "daily":
-			shapeObjectOutput(getDailyNote(), flags, NOTES_FIELDS);
-			return;
-		case "search":
-		case "add":
-			jsonOut({ error: `notes ${subcommand} not implemented yet` }, flags);
-			return;
-		default:
-			validationErr("Usage: sift notes <search|add|daily>");
-	}
-}
-
 function reminderListArgsFromFlags(
 	flags: Map<string, string | true>,
 ): string[] {
@@ -1991,11 +1945,6 @@ export async function runCli(argv: string[]): Promise<void> {
 			case "cal:free":
 			case "cal:add":
 				cmdCalendar(command.split(":")[1], flags);
-				break;
-			case "notes:search":
-			case "notes:add":
-			case "notes:daily":
-				cmdNotes(command.split(":")[1], flags);
 				break;
 			case "today":
 				await cmdToday(flags);

@@ -3,61 +3,52 @@ import { render } from "ink";
 
 const args = process.argv.slice(2);
 
-// Known CLI subcommands
+// Known CLI subcommands. Anything matching here always routes to the
+// structured JSON CLI surface, regardless of TTY state.
 const CLI_COMMANDS = new Set([
 	"cal",
-	"list",
-	"ls",
-	"done",
 	"describe",
+	"done",
 	"email",
 	"help",
 	"linear",
+	"list",
+	"ls",
 	"money",
-	"notes",
-	"star",
-	"remind",
-	"today",
 	"open",
+	"places",
 	"refresh",
+	"remind",
+	"star",
 	"status",
+	"today",
 ]);
 
-// Determine if this is a CLI invocation:
-// - First arg is a known subcommand, OR
-// - --json flag is present, OR
-// - Not a TTY (piped to another process)
 const firstArg = args[0] ?? "";
-const isCliMode =
-	CLI_COMMANDS.has(firstArg) ||
-	args.includes("--json") ||
-	(!(process.stdout.isTTY || args.includes("--setup")) && args.length > 0);
+const wantsHelp = args.includes("--help") || args.includes("-h");
+const wantsAgent = args.includes("--agent") || args.includes("--json");
 
 if (args.includes("--setup") || args.includes("-s")) {
-	import("./setup.tsx");
+	// Interactive setup wizard.
+	await import("./setup.tsx");
+} else if (firstArg === "mcp") {
+	// MCP stdio server — long-running, talks JSON-RPC on stdio.
+	const { startMcpServer } = await import("./mcp.ts");
+	await startMcpServer();
 } else if (
-	isCliMode ||
-	(args.includes("--help") && !process.stdout.isTTY) ||
-	(args.includes("-h") && !process.stdout.isTTY)
+	CLI_COMMANDS.has(firstArg) ||
+	wantsAgent ||
+	wantsHelp ||
+	!process.stdout.isTTY
 ) {
-	// CLI mode — structured JSON output
+	// CLI / agent mode — structured JSON output.
 	const { runCli } = await import("./cli.ts");
-
-	// If --help/-h, route to CLI help
-	const cliArgs =
-		args.includes("--help") || args.includes("-h") ? ["help"] : args;
+	const cliArgs = wantsHelp
+		? ["help"]
+		: args.filter((arg) => arg !== "--agent");
 	await runCli(cliArgs);
-} else if (
-	args.includes("--help") ||
-	args.includes("-h") ||
-	firstArg === "help"
-) {
-	// Human help — show both TUI and CLI usage
-	const { runCli } = await import("./cli.ts");
-	await runCli(["help"]);
-	process.exit(0);
 } else {
-	// TUI mode — interactive terminal UI
+	// TUI mode — interactive Ink app.
 	const { App } = await import("./app.tsx");
 
 	process.stdout.write("\x1b[?1049h"); // Alternate screen buffer

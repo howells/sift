@@ -7,7 +7,7 @@
 
 Sift is a CLI toolkit that gives Claude Code everything it needs to help Daniel
 navigate his day-to-day life. Email, reminders, and Linear are the **input** (what
-needs doing). Financial operations, calendar, notes, and other tools are the
+needs doing). Financial operations, calendar, and other tools are the
 **output** (how to do it).
 
 The primary interface is Claude Code. The TUI is a secondary, interactive fallback.
@@ -154,17 +154,6 @@ sift cal free [--duration=30m] [--date=DATE]
 sift cal add --title="..." --date=DATE --time=TIME [--duration=1h]
 ```
 
-### Notes (`sift notes`)
-
-Source: `obsi` CLI (spawnSync) if installed, otherwise direct vault read.
-Vault: `~/Obsi`
-
-```
-sift notes search "query"
-sift notes add "quick note"
-sift notes daily               # today's daily note
-```
-
 ---
 
 ## Tools Not Wrapped by Sift
@@ -175,6 +164,11 @@ Claude Code invokes them directly — sift doesn't add value by wrapping them.
 | Tool | Purpose | Discovery |
 |------|---------|-----------|
 | `bird` | Twitter/X (post, read, search) | `bird --help` |
+| `ledger` | Financial I/O (Starling, Xero, Stripe, Wise, Revolut) | `ledger --help` |
+| `starlingcli` | Starling Bank CLI (read-only) | `starlingcli help` |
+| `revolutcli` | Revolut Business CLI (read-only) | `revolutcli help` |
+| `wisecli` | Wise (TransferWise) CLI (read-only) | `wisecli help` |
+| `motif` | Agent-first AI image generation (fal.ai) | `motif --help` |
 | `falcon` | AI image generation (fal.ai) | `falcon --help` |
 | `granola` | Meeting notes export | `granola --help` |
 | `granola-sync` | Sync meetings to Obsidian | `granola-sync --help` |
@@ -505,7 +499,6 @@ Add remaining subcommands. These are independent and can be built in any order.
 1. `sift linear` — Linear REST API client, issues cache
 2. `sift money` — ledger library import + offledger CLI wrapper
 3. `sift cal` — gog calendar wrapper (no cache)
-4. `sift notes` — obsi wrapper
 
 ### Phase 4: `sift today` + action model
 
