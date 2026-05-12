@@ -59,14 +59,13 @@ describe("validateConfig", () => {
 		expect(errors).toContain("Account missing 'group'");
 	});
 
-	it("returns error when no API key and CLI disabled", () => {
+	it("does not require legacy Anthropic API keys", () => {
 		const config: SiftConfig = {
 			accounts: [{ name: "test", email: "test@test.com", group: "test" }],
 			preferClaudeCli: false,
 		};
 
-		const errors = validateConfig(config);
-		expect(errors).toContain("No Anthropic API key and Claude CLI disabled");
+		expect(validateConfig(config)).toEqual([]);
 	});
 
 	it("allows no API key when CLI is preferred", () => {

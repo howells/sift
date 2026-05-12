@@ -13,18 +13,18 @@ export interface ReminderListConfig {
 	list: string; // Apple Reminders list name
 }
 
-export interface LinearConfig {
+interface LinearConfig {
 	apiKey?: string;
 	defaultTeam?: string;
 	userId?: string;
 }
 
-export interface CalendarConfig {
+interface CalendarConfig {
 	account?: string;
 	calendars?: string[];
 }
 
-export interface ThingsConfig {
+interface ThingsConfig {
 	list?: string;
 }
 
@@ -32,10 +32,12 @@ export type TaskBackend = "reminders" | "things";
 
 export interface SiftConfig {
 	accounts: AccountConfig[];
+	/** @deprecated Sift uses @howells/envelope local CLI providers. */
 	anthropicApiKey?: string;
 	calendar?: CalendarConfig;
 	linear?: LinearConfig;
-	preferClaudeCli?: boolean; // If true, try claude CLI first, fall back to API
+	/** @deprecated Provider is selected with SIFT_LLM_PROVIDER. */
+	preferClaudeCli?: boolean;
 	reminderLists?: ReminderListConfig[]; // Apple Reminders lists to show
 	taskBackend?: TaskBackend;
 	things?: ThingsConfig;
@@ -75,7 +77,7 @@ export function saveConfig(config: SiftConfig): void {
 		mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
 	}
 
-	// Config contains API keys — restrict to owner only
+	// Config can contain integration credentials — restrict to owner only
 	writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
 		mode: 0o600,
 	});
@@ -128,10 +130,6 @@ export function validateConfig(config: SiftConfig): string[] {
 		if (!account.group) {
 			errors.push("Account missing 'group'");
 		}
-	}
-
-	if (!config.anthropicApiKey && config.preferClaudeCli === false) {
-		errors.push("No Anthropic API key and Claude CLI disabled");
 	}
 
 	return errors;

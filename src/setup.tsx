@@ -20,21 +20,14 @@ type Step =
 	| "account_group"
 	| "account_verify"
 	| "more_accounts"
-	| "api_key"
 	| "confirm"
 	| "done";
 
-function getLLMDisplayName(
-	claudeAvailable: boolean | null,
-	apiKey: string,
-): string {
+function getLLMDisplayName(claudeAvailable: boolean | null): string {
 	if (claudeAvailable) {
-		return "Claude CLI";
+		return "Claude CLI via @howells/envelope";
 	}
-	if (apiKey) {
-		return "Anthropic API";
-	}
-	return "None configured!";
+	return "Set SIFT_LLM_PROVIDER=codex|gemini, or install/authenticate Claude CLI";
 }
 
 function Setup() {
@@ -44,7 +37,6 @@ function Setup() {
 	const [currentAccount, setCurrentAccount] = useState<Partial<AccountConfig>>(
 		{},
 	);
-	const [apiKey, setApiKey] = useState("");
 	const [inputValue, setInputValue] = useState("");
 	const [claudeAvailable, setClaudeAvailable] = useState<boolean | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -60,14 +52,13 @@ function Setup() {
 			setInputValue("");
 			setStep("account_name");
 		} else if (input === "n" || key.return) {
-			setStep("api_key");
+			setStep("confirm");
 		}
 	};
 
 	const handleConfirmKey = () => {
 		const config: SiftConfig = {
 			accounts,
-			anthropicApiKey: apiKey || undefined,
 			preferClaudeCli: claudeAvailable === true,
 		};
 		saveConfig(config);
@@ -79,8 +70,7 @@ function Setup() {
 			input === "q" &&
 			step !== "account_name" &&
 			step !== "account_email" &&
-			step !== "account_group" &&
-			step !== "api_key";
+			step !== "account_group";
 
 		if (inputQuit) {
 			exit();
@@ -159,10 +149,6 @@ function Setup() {
 			setCurrentAccount({});
 			setInputValue("");
 			setStep("more_accounts");
-		} else if (step === "api_key") {
-			setApiKey(value);
-			setInputValue("");
-			setStep("confirm");
 		}
 	};
 
@@ -179,7 +165,9 @@ function Setup() {
 					<Box flexDirection="column" marginTop={1}>
 						<Text dimColor>You'll need:</Text>
 						<Text dimColor>• Gmail accounts authenticated with gog CLI</Text>
-						<Text dimColor>• Optionally, an Anthropic API key</Text>
+						<Text dimColor>
+							• Claude, Codex, or Gemini CLI authenticated for @howells/envelope
+						</Text>
 					</Box>
 					<Box flexDirection="column" marginTop={1}>
 						<Text dimColor>To authenticate a Gmail account with gog, run:</Text>
@@ -288,35 +276,6 @@ function Setup() {
 				</Box>
 			)}
 
-			{step === "api_key" && (
-				<Box flexDirection="column" marginTop={1}>
-					<Text bold>Step 2: Anthropic API Key (optional)</Text>
-					<Box marginTop={1}>
-						{claudeAvailable ? (
-							<Text color="green">
-								✓ Claude CLI detected - will use that by default
-							</Text>
-						) : (
-							<Text color="yellow">
-								Claude CLI not found - API key recommended
-							</Text>
-						)}
-					</Box>
-					<Box marginTop={1}>
-						<Text dimColor>Leave blank to skip (requires Claude CLI)</Text>
-					</Box>
-					<Box marginTop={1}>
-						<Text color="cyan">› </Text>
-						<TextInput
-							mask="*"
-							onChange={setInputValue}
-							onSubmit={handleSubmit}
-							value={inputValue}
-						/>
-					</Box>
-				</Box>
-			)}
-
 			{step === "confirm" && (
 				<Box flexDirection="column" marginTop={1}>
 					<Text bold>Configuration Summary</Text>
@@ -329,7 +288,7 @@ function Setup() {
 						))}
 					</Box>
 					<Box marginTop={1}>
-						<Text>LLM: {getLLMDisplayName(claudeAvailable, apiKey)}</Text>
+						<Text>LLM: {getLLMDisplayName(claudeAvailable)}</Text>
 					</Box>
 					<Box marginTop={1}>
 						<Text>

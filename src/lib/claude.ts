@@ -1,11 +1,11 @@
-import {
-	type CliClient,
-	createClaudeCodeClient,
-	createEnvelope,
-	createGeminiClient,
-} from "@howells/envelope";
+import { createEnvelope } from "@howells/envelope";
 import { z } from "zod";
 import { cacheAnalysisBatch, getCachedAnalysis, hashEmail } from "./cache.ts";
+import {
+	createSiftEnvelopeClient,
+	getEnvelopeProviderLabel,
+	resolveEnvelopeProvider,
+} from "./envelope-client.ts";
 import type { Email } from "./gmail.ts";
 import { ACTION_TYPES, type AnalysisResult, type Todo } from "./types.ts";
 
@@ -43,46 +43,16 @@ const ReminderContentSchema = z.object({
 export type ReminderContent = z.infer<typeof ReminderContentSchema>;
 
 // --- Envelope client ---
-//
-// When running nested inside Claude Code (CLAUDECODE=1), spawning a child
-// `claude` CLI hangs on auth/IPC contention with the host session. Route to
-// Gemini instead — separate binary, separate auth, no contention. When run
-// standalone, keep using the user's Claude Code subscription.
 
-function buildClient(): CliClient {
-	if (process.env.CLAUDECODE === "1") {
-		return createGeminiClient({
-			model: "gemini-3-flash-preview",
-			timeoutMs: 300_000,
-			options: { approvalMode: "plan" },
-		});
-	}
-	return createClaudeCodeClient({
-		model: "sonnet",
-		maxBudgetUsd: 5,
-		timeoutMs: 300_000,
-		options: {
-			retries: 1,
-			retryDelayMs: 800,
-		},
-	});
-}
-
-const client = buildClient();
+const provider = resolveEnvelopeProvider();
+const client = createSiftEnvelopeClient(provider);
 
 /**
  * Human-readable label for the active LLM provider, suitable for progress
  * messages. Reflects the runtime routing in `buildClient`.
  */
 export function getActiveProviderLabel(): string {
-	switch (client.tool) {
-		case "gemini":
-			return "Gemini";
-		case "codex":
-			return "Codex";
-		default:
-			return "Claude";
-	}
+	return getEnvelopeProviderLabel(provider);
 }
 
 // --- Envelopes (typed LLM functions) ---
@@ -217,7 +187,7 @@ function emitWarning(payload: Record<string, unknown>): void {
  * Analyze emails and extract time-aware todos.
  * Uses SQLite cache to avoid re-analyzing unchanged emails.
  *
- * On LLM failure (or when nested inside Claude Code without an API key),
+ * On LLM failure,
  * returns cached todos only and emits a structured warning to stderr.
  * Failed batches are intentionally NOT cached so they will be retried next run.
  */

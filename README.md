@@ -33,13 +33,13 @@ pnpm dev
 sift --setup
 ```
 
-This creates `~/.config/sift/config.json` with your Gmail accounts, groups, and API key.
+This creates `~/.config/sift/config.json` with your Gmail accounts and groups.
 
 ### Requirements
 
 - [gog](https://github.com/howells/gog) -- Gmail and Google Calendar access
-- An Anthropic API key, or the [Claude CLI](https://docs.anthropic.com/en/docs/claude-cli) installed
-- Node.js >= 18
+- [Claude CLI](https://docs.anthropic.com/en/docs/claude-cli), Codex CLI, or Gemini CLI authenticated for [@howells/envelope](https://github.com/howells/envelope)
+- Node.js >= 20.11
 
 ### Optional
 
