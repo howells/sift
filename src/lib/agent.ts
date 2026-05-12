@@ -1,4 +1,4 @@
-export interface CommandArgSchema {
+interface CommandArgSchema {
 	description: string;
 	name: string;
 	required: boolean;
@@ -32,9 +32,7 @@ export interface CommandSchema {
 	};
 }
 
-const PATH_TRAVERSAL_PATTERN = /\.\./;
-const QUERY_FRAGMENT_PATTERN = /[?#]/;
-const PERCENT_ENCODING_PATTERN = /%/;
+const ISO_DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const SUSPICIOUS_LINE_PATTERNS = [
 	/^\s*(system|assistant|developer|tool)\s*:/i,
 	/ignore\s+previous\s+instructions/i,
@@ -70,30 +68,6 @@ export function validateAgentText(label: string, value: string): string | null {
 }
 
 /** Validate an agent-provided identifier, rejecting path traversal and query fragments. */
-export function validateAgentIdentifier(
-	label: string,
-	value: string,
-): string | null {
-	const textError = validateAgentText(label, value);
-	if (textError) {
-		return textError;
-	}
-
-	if (PATH_TRAVERSAL_PATTERN.test(value)) {
-		return `${label} contains path traversal`;
-	}
-
-	if (QUERY_FRAGMENT_PATTERN.test(value)) {
-		return `${label} contains query or fragment characters`;
-	}
-
-	if (PERCENT_ENCODING_PATTERN.test(value)) {
-		return `${label} contains percent encoding`;
-	}
-
-	return null;
-}
-
 /** Validate that a string is a parseable ISO-8601 date. */
 export function validateIsoDate(label: string, value: string): string | null {
 	const textError = validateAgentText(label, value);
@@ -103,6 +77,13 @@ export function validateIsoDate(label: string, value: string): string | null {
 
 	if (Number.isNaN(Date.parse(value))) {
 		return `${label} must be an ISO-8601 date`;
+	}
+
+	if (ISO_DATE_ONLY_PATTERN.test(value)) {
+		const parsed = new Date(`${value}T00:00:00.000Z`);
+		if (parsed.toISOString().slice(0, 10) !== value) {
+			return `${label} must be a valid ISO-8601 date`;
+		}
 	}
 
 	return null;
