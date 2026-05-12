@@ -15,7 +15,7 @@ export const ACTION_TYPES = [
 	"note",
 	"other",
 ] as const;
-export type ActionType = (typeof ACTION_TYPES)[number];
+type ActionType = (typeof ACTION_TYPES)[number];
 
 export interface Todo {
 	account: string;

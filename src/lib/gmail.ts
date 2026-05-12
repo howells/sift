@@ -96,7 +96,7 @@ export function isGogAvailable(): boolean {
 	return result.status === 0 && !result.error;
 }
 
-export class GogAuthError extends Error {
+class GogAuthError extends Error {
 	account?: string;
 
 	constructor(message: string, account?: string) {

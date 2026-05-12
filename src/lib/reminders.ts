@@ -64,7 +64,7 @@ export function getEmailReminderStates(
 /**
  * Check if a specific email already has a reminder.
  */
-export function hasReminder(emailId: string, list = "Work"): boolean {
+function hasReminder(emailId: string, list = "Work"): boolean {
 	const states = getEmailReminderStates(list);
 	return states.has(emailId);
 }
@@ -72,10 +72,7 @@ export function hasReminder(emailId: string, list = "Work"): boolean {
 /**
  * Find reminder ID by email ID (for completing reminders).
  */
-export function findReminderIdByEmail(
-	emailId: string,
-	list = "Work",
-): string | null {
+function findReminderIdByEmail(emailId: string, list = "Work"): string | null {
 	const result = spawnSync("remindctl", ["list", list, "--json"], {
 		stdio: ["pipe", "pipe", "pipe"],
 		encoding: "utf-8",

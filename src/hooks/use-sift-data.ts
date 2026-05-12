@@ -1,155 +1,15 @@
+import open from "open";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getAccountGroupsList, getAccounts } from "../lib/auth.ts";
-import { pruneOldEntries, removeCachedAnalysis } from "../lib/cache.ts";
-import { analyzeEmails, generateReminderFromEmail } from "../lib/claude.ts";
-import {
-	configExists,
-	getReminderLists,
-	getTaskBackend,
-	loadConfig,
-} from "../lib/config.ts";
-import { GmailClient, isGogAvailable } from "../lib/gmail.ts";
-import {
-	completeReminderByEmail,
-	completeReminderById,
-	createReminderFromTodo,
-	fetchPendingReminders,
-	getEmailReminderStates,
-	isRemindctlAvailable,
-	openRemindersApp,
-} from "../lib/reminders.ts";
-import { createThingsTodoFromTodo } from "../lib/things.ts";
-import type { ReminderState, Todo, View } from "../lib/types.ts";
+import { loadSiftData, runTodoAction, selectTodos } from "../lib/actions.ts";
+import type { SiftData } from "../lib/pipeline.ts";
+import { openRemindersApp } from "../lib/reminders.ts";
+import type { Todo, View } from "../lib/types.ts";
 
 interface LoadingState {
 	active: boolean;
 	detail?: string;
 	message: string;
 	step: number;
-}
-
-function splitTodosIntoActiveAndBacklog(
-	todos: Todo[],
-	cutoffDate: Date,
-	reminderStates: Map<string, ReminderState>,
-): { active: Todo[]; backlog: Todo[] } {
-	const active: Todo[] = [];
-	const backlog: Todo[] = [];
-
-	for (const todo of todos) {
-		const todoWithReminder = {
-			...todo,
-			reminderState:
-				reminderStates.get(todo.emailId ?? "") ?? ("none" as ReminderState),
-		};
-
-		const todoDate = new Date(todo.date);
-		if (todoDate < cutoffDate) {
-			backlog.push(todoWithReminder);
-		} else {
-			active.push(todoWithReminder);
-		}
-	}
-
-	return { active, backlog };
-}
-
-function setupGmailClients(
-	accounts: ReturnType<typeof getAccounts>,
-	setLoading: (fn: (l: LoadingState) => LoadingState) => void,
-): Map<string, GmailClient> {
-	setLoading(() => ({ active: true, message: "Connecting to Gmail", step: 1 }));
-	const clients = new Map<string, GmailClient>();
-
-	for (const [index, account] of accounts.entries()) {
-		setLoading((l) => ({
-			...l,
-			detail: `${account.name} (${index + 1}/${accounts.length})`,
-		}));
-		clients.set(account.name, new GmailClient(account.email));
-	}
-
-	return clients;
-}
-
-function validateSetup(
-	setError: (msg: string | null) => void,
-	setLoading: (fn: (l: LoadingState) => LoadingState) => void,
-): {
-	config: ReturnType<typeof loadConfig>;
-	reminderLists: ReturnType<typeof getReminderLists>;
-} | null {
-	if (!configExists()) {
-		setError("No config found. Run 'sift --setup' to configure.");
-		setLoading((l) => ({ ...l, active: false }));
-		return null;
-	}
-
-	if (!isGogAvailable()) {
-		setError(
-			"'gog' CLI not found. Install it first: https://github.com/howells/gog",
-		);
-		setLoading((l) => ({ ...l, active: false }));
-		return null;
-	}
-
-	const config = loadConfig();
-	const reminderLists = config ? getReminderLists(config) : null;
-
-	if (
-		getTaskBackend(config) === "reminders" &&
-		reminderLists?.length &&
-		!isRemindctlAvailable()
-	) {
-		setError(
-			"'remindctl' CLI not found but reminder lists are configured. Install it or remove reminderLists from config.",
-		);
-		setLoading((l) => ({ ...l, active: false }));
-		return null;
-	}
-
-	return { config, reminderLists };
-}
-
-function fetchAllEmails(
-	accounts: ReturnType<typeof getAccounts>,
-	clients: Map<string, GmailClient>,
-	setLoading: (fn: (l: LoadingState) => LoadingState) => void,
-): Promise<
-	Array<{
-		account: string;
-		group: string;
-		emails: Awaited<ReturnType<GmailClient["listStarred"]>>;
-	}>
-> {
-	setLoading(() => ({ active: true, message: "Fetching emails", step: 2 }));
-
-	return Promise.all(
-		accounts.map(async (account) => {
-			const client = clients.get(account.name);
-			if (!client) {
-				return { account: account.name, group: account.group, emails: [] };
-			}
-			const [starred, unread] = await Promise.all([
-				client.listStarred(200),
-				client.listUnread(100),
-			]);
-
-			const starredIds = new Set(starred.map((e) => e.id));
-			const combined = [...starred];
-			for (const email of unread) {
-				if (!starredIds.has(email.id)) {
-					combined.push(email);
-				}
-			}
-
-			return {
-				account: account.name,
-				group: account.group,
-				emails: combined,
-			};
-		}),
-	);
 }
 
 export interface SiftState {
@@ -182,8 +42,6 @@ export interface SiftState {
 	view: View;
 }
 
-const urgencyOrder = { overdue: 0, this_week: 1, when_you_can: 2 };
-
 export function useSiftData(): SiftState {
 	const [view, setView] = useState<View>("main");
 	const [allTodos, setAllTodos] = useState<Todo[]>([]);
@@ -196,15 +54,10 @@ export function useSiftData(): SiftState {
 		step: 1,
 	});
 	const [error, setError] = useState<string | null>(null);
-	const [gmailClients, setGmailClients] = useState<Map<string, GmailClient>>(
-		new Map(),
-	);
+	const [siftData, setSiftData] = useState<SiftData | null>(null);
 	const [refreshTrigger, setRefreshTrigger] = useState(0);
 	const autoRefreshQueued = useRef(false);
-
-	const [accountGroups, setAccountGroups] = useState(() =>
-		getAccountGroupsList(),
-	);
+	const [accountGroups, setAccountGroups] = useState<string[]>([]);
 
 	// --- Data loading ---
 
@@ -219,75 +72,14 @@ export function useSiftData(): SiftState {
 
 		async function init() {
 			try {
-				// Re-read config on each refresh
-				const freshAccounts = getAccounts();
-				setAccountGroups(getAccountGroupsList());
-
-				const setupValidation = validateSetup(setError, setLoading);
-				if (!setupValidation) {
-					return;
-				}
-
-				const { reminderLists } = setupValidation;
-
-				pruneOldEntries(90);
-
-				const clients = setupGmailClients(freshAccounts, setLoading);
-				setGmailClients(clients);
-
-				const allEmails = await fetchAllEmails(
-					freshAccounts,
-					clients,
-					setLoading,
-				);
-
-				const totalEmails = allEmails.reduce(
-					(sum, a) => sum + a.emails.length,
-					0,
-				);
-
-				// Step 3: Analyze with Claude
-				setLoading({
-					active: true,
-					message: "Analyzing with Claude",
-					step: 3,
-					detail: `${totalEmails} emails to check`,
+				const data = await loadSiftData((step, message, detail) => {
+					setLoading({ active: true, detail, message, step });
 				});
 
-				const result = await analyzeEmails(
-					allEmails,
-					new Date(),
-					(cached, toAnalyze) => {
-						let detail: string;
-						if (toAnalyze === 0) {
-							detail = `All ${cached} from cache`;
-						} else if (cached > 0) {
-							detail = `${cached} cached, analyzing ${toAnalyze} new`;
-						} else {
-							detail = `Analyzing ${toAnalyze} emails`;
-						}
-						setLoading((l) => ({ ...l, detail }));
-					},
-				);
-
-				const thirtyDaysAgo = new Date();
-				thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-				const defaultList = reminderLists?.[0]?.list ?? "Work";
-				const reminderStates = getEmailReminderStates(defaultList);
-
-				const { active, backlog } = splitTodosIntoActiveAndBacklog(
-					result.todos,
-					thirtyDaysAgo,
-					reminderStates,
-				);
-
-				const finalActive = reminderLists?.length
-					? [...active, ...fetchPendingReminders(reminderLists).todos]
-					: active;
-
-				setAllTodos(finalActive);
-				setAllBacklog(backlog);
+				setSiftData(data);
+				setAccountGroups(data.groups);
+				setAllTodos(data.active);
+				setAllBacklog(data.backlog);
 				setLoading((l) => ({ ...l, active: false }));
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Unknown error");
@@ -302,20 +94,32 @@ export function useSiftData(): SiftState {
 
 	const filteredTodos = useMemo(
 		() =>
-			(selectedGroup
-				? allTodos.filter((t) => t.group === selectedGroup)
-				: allTodos
-			).sort((a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency]),
-		[allTodos, selectedGroup],
+			selectTodos(
+				{
+					accounts: [],
+					active: allTodos,
+					backlog: allBacklog,
+					clients: new Map(),
+					groups: accountGroups,
+				},
+				{ group: selectedGroup ?? undefined, view: "active" },
+			),
+		[accountGroups, allBacklog, allTodos, selectedGroup],
 	);
 
 	const filteredBacklog = useMemo(
 		() =>
-			(selectedGroup
-				? allBacklog.filter((t) => t.group === selectedGroup)
-				: allBacklog
-			).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
-		[allBacklog, selectedGroup],
+			selectTodos(
+				{
+					accounts: [],
+					active: allTodos,
+					backlog: allBacklog,
+					clients: new Map(),
+					groups: accountGroups,
+				},
+				{ group: selectedGroup ?? undefined, view: "backlog" },
+			),
+		[accountGroups, allBacklog, allTodos, selectedGroup],
 	);
 
 	const currentList = view === "backlog" ? filteredBacklog : filteredTodos;
@@ -359,12 +163,6 @@ export function useSiftData(): SiftState {
 		}
 	}
 
-	function getDefaultReminderList(): string {
-		const config = loadConfig();
-		const reminderLists = config ? getReminderLists(config) : null;
-		return reminderLists?.[0]?.list ?? "Work";
-	}
-
 	// --- Navigation ---
 
 	function moveUp() {
@@ -372,7 +170,9 @@ export function useSiftData(): SiftState {
 	}
 
 	function moveDown() {
-		setSelectedIndex((i) => Math.min(currentList.length - 1, i + 1));
+		setSelectedIndex((i) =>
+			Math.min(Math.max(0, currentList.length - 1), i + 1),
+		);
 	}
 
 	function toggleBacklog() {
@@ -403,151 +203,78 @@ export function useSiftData(): SiftState {
 
 	function markDone() {
 		const todo = currentList[selectedIndex];
-		if (!todo) {
+		if (!(todo && siftData)) {
 			return;
 		}
 
-		// Handle reminder-sourced todos
-		if (todo.source === "reminder" && todo.reminderId) {
-			completeReminderById(todo.reminderId);
-			const newLength = currentList.filter((t) => t.id !== todo.id).length;
-			removeTodoFromList(todo.id);
-			setSelectedIndex((i) => Math.min(i, Math.max(0, newLength - 1)));
-			return;
-		}
-
-		// Handle email-sourced todos
-		if (todo.source === "email" && todo.emailId) {
-			const emailId = todo.emailId;
-			const client = gmailClients.get(todo.account);
-			if (!client) {
+		const newLength = currentList.filter((t) => t.id !== todo.id).length;
+		Promise.resolve(runTodoAction("done", todo, siftData)).then((result) => {
+			if (!result.success) {
 				return;
 			}
-
-			// Complete associated reminder if it exists
-			if (todo.reminderState !== "none") {
-				completeReminderByEmail(emailId, getDefaultReminderList());
-			}
-
-			const newLength = currentList.filter((t) => t.id !== todo.id).length;
-
-			Promise.all([client.unstar(emailId), client.markRead(emailId)]).then(
-				() => {
-					removeCachedAnalysis(emailId);
-					removeTodoFromList(todo.id);
-					setSelectedIndex((i) => Math.min(i, Math.max(0, newLength - 1)));
-				},
-			);
-		}
+			removeTodoFromList(todo.id);
+			setSelectedIndex((i) => Math.min(i, Math.max(0, newLength - 1)));
+		});
 	}
 
 	function starTodo() {
 		const todo = currentList[selectedIndex];
-		if (!todo || todo.source === "reminder") {
+		if (!(todo && siftData) || todo.source === "reminder") {
 			return;
 		}
 
-		if (!todo.isStarred && todo.emailId) {
-			const client = gmailClients.get(todo.account);
-			if (client) {
-				const success = client.star(todo.emailId);
-				if (success) {
+		if (!todo.isStarred) {
+			Promise.resolve(runTodoAction("star", todo, siftData)).then((result) => {
+				if (result.success) {
 					updateTodoInList(todo.id, (t) => ({ ...t, isStarred: true }));
 				}
-			}
+			});
 		}
 	}
 
 	function createReminderAction() {
 		const todo = currentList[selectedIndex];
-		if (!todo || todo.source === "reminder" || todo.reminderState !== "none") {
+		if (
+			!(todo && siftData) ||
+			todo.source === "reminder" ||
+			todo.reminderState !== "none"
+		) {
 			return;
 		}
 
-		const defaultList = getDefaultReminderList();
-		const config = loadConfig();
-		const taskBackend = getTaskBackend(config);
-
-		// Async: fetch thread, generate with Claude, create reminder
-		(async () => {
-			const client = gmailClients.get(todo.account);
-			if (!(client && todo.threadId)) {
-				const result =
-					taskBackend === "things"
-						? createThingsTodoFromTodo(todo, config)
-						: createReminderFromTodo(todo, defaultList);
-				if (result.success) {
-					updateTodoInList(todo.id, (t) => ({
-						...t,
-						reminderState: "pending" as ReminderState,
-					}));
-				}
-				return;
+		Promise.resolve(runTodoAction("remind", todo, siftData)).then((result) => {
+			if (result.success) {
+				updateTodoInList(todo.id, (t) => ({
+					...t,
+					reminderState: "pending",
+				}));
 			}
-
-			// Optimistic UI: mark pending immediately
-			updateTodoInList(todo.id, (t) => ({
-				...t,
-				reminderState: "pending" as ReminderState,
-			}));
-
-			try {
-				const thread = await client.getThread(todo.threadId);
-				if (!thread) {
-					if (taskBackend === "things") {
-						createThingsTodoFromTodo(todo, config);
-					} else {
-						createReminderFromTodo(todo, defaultList);
-					}
-					return;
-				}
-
-				const reminderContent = await generateReminderFromEmail(
-					thread,
-					todo.summary,
-				);
-
-				if (taskBackend === "things") {
-					createThingsTodoFromTodo(todo, config, {
-						title: reminderContent.title,
-						notes: reminderContent.notes,
-					});
-				} else {
-					createReminderFromTodo(todo, defaultList, {
-						title: reminderContent.title,
-						notes: reminderContent.notes,
-					});
-				}
-			} catch {
-				if (taskBackend === "things") {
-					createThingsTodoFromTodo(todo, config);
-				} else {
-					createReminderFromTodo(todo, defaultList);
-				}
-			}
-		})();
+		});
 	}
 
 	function openTodo() {
 		const todo = currentList[selectedIndex];
-		if (!todo) {
+		if (!(todo && siftData)) {
 			return;
 		}
 
 		if (todo.source === "reminder") {
 			openRemindersApp();
-		} else if (todo.threadId) {
-			const client = gmailClients.get(todo.account);
-			if (client) {
-				client.openInBrowser(todo.threadId);
-			}
+			return;
 		}
+
+		Promise.resolve(runTodoAction("open", todo, siftData)).then((result) => {
+			if (result.success && result.error) {
+				open(result.error);
+			}
+		});
 	}
 
 	function refresh() {
 		setLoading({ active: true, message: "Connecting to Gmail", step: 1 });
 		setAllTodos([]);
 		setAllBacklog([]);
+		setSiftData(null);
 		setSelectedIndex(0);
 		setView("main");
 		setRefreshTrigger((n) => n + 1);

@@ -3,6 +3,16 @@
  * All output is structured and sanitized for agent use.
  * Exit codes: 0 = success, 1 = error, 2 = validation error.
  */
+
+import {
+	findSiftTodo,
+	getSiftStatus,
+	loadSiftData,
+	previewTodoAction,
+	refreshSiftData,
+	runTodoAction,
+	selectTodos,
+} from "./lib/actions.ts";
 import {
 	applyFieldMaskToArray,
 	applyFieldMaskToObject,
@@ -15,28 +25,12 @@ import {
 	validateIsoDate,
 	writeAgentOutput,
 } from "./lib/agent.ts";
-import { getAccountGroupsList, getAccounts } from "./lib/auth.ts";
-import { clearCache, getCacheStats } from "./lib/cache.ts";
+import { getAccountGroupsList } from "./lib/auth.ts";
 import { type CalendarEvent, getCalendarToday } from "./lib/calendar.ts";
-import { configExists, getTaskBackend, loadConfig } from "./lib/config.ts";
-import { isGogAvailable } from "./lib/gmail.ts";
+import { getTaskBackend, loadConfig } from "./lib/config.ts";
 import { buildToolDiscovery, getLinearSummary } from "./lib/linear.ts";
 import { executeLedgerMoneyCommand } from "./lib/money.ts";
-import {
-	executeDone,
-	executeOpen,
-	executeRemind,
-	executeStar,
-	fetchAndAnalyze,
-	filterByGroup,
-	findTodoById,
-	sortByUrgency,
-} from "./lib/pipeline.ts";
-import {
-	executePlacesCommand,
-	isGooglePlacesConfigured,
-	isGoPlacesAvailable,
-} from "./lib/places.ts";
+import { executePlacesCommand } from "./lib/places.ts";
 import {
 	addReminder,
 	completeReminder,
@@ -1204,21 +1198,24 @@ async function cmdList(flags: Map<string, string | true>): Promise<void> {
 		}
 	}
 
-	const data = await fetchAndAnalyze((step, message, detail) => {
+	const data = await loadSiftData((step, message, detail) => {
 		process.stderr.write(
 			`${JSON.stringify({ progress: { step, message, detail } })}\n`,
 		);
 	});
 
-	let todos = showBacklog ? data.backlog : data.active;
-	if (group) {
-		todos = filterByGroup(todos, group);
-	}
-
-	shapeArrayOutput(sortByUrgency(todos), flags, TODO_FIELDS, {
-		groups: data.groups,
-		view: showBacklog ? "backlog" : "active",
-	});
+	shapeArrayOutput(
+		selectTodos(data, {
+			group,
+			view: showBacklog ? "backlog" : "active",
+		}),
+		flags,
+		TODO_FIELDS,
+		{
+			groups: data.groups,
+			view: showBacklog ? "backlog" : "active",
+		},
+	);
 }
 
 async function cmdDone(
@@ -1227,34 +1224,19 @@ async function cmdDone(
 ): Promise<void> {
 	const { id } = await resolveIdInput(args, flags);
 	const dryRun = flags.has("dry-run");
-	const data = await fetchAndAnalyze();
-	const allTodos = [...data.active, ...data.backlog];
-	const todo = findTodoById(allTodos, id);
+	const data = await loadSiftData();
+	const todo = findSiftTodo(data, id);
 
 	if (!todo) {
 		jsonErr(`Todo not found: ${id}`, "NOT_FOUND");
 	}
 
 	if (dryRun) {
-		jsonOut(
-			{
-				action: "done",
-				dryRun: true,
-				id: todo.id,
-				summary: todo.summary,
-				wouldDo: [
-					todo.source === "email" ? "Unstar email" : "Complete reminder",
-					todo.source === "email" ? "Mark as read" : null,
-					todo.reminderState === "none" ? null : "Complete associated reminder",
-					todo.source === "email" ? "Remove from cache" : null,
-				].filter(Boolean),
-			},
-			flags,
-		);
+		jsonOut(previewTodoAction("done", todo), flags);
 		return;
 	}
 
-	jsonOut(await executeDone(todo, data.clients), flags);
+	jsonOut(await runTodoAction("done", todo, data), flags);
 }
 
 async function cmdStar(
@@ -1263,29 +1245,19 @@ async function cmdStar(
 ): Promise<void> {
 	const { id } = await resolveIdInput(args, flags);
 	const dryRun = flags.has("dry-run");
-	const data = await fetchAndAnalyze();
-	const allTodos = [...data.active, ...data.backlog];
-	const todo = findTodoById(allTodos, id);
+	const data = await loadSiftData();
+	const todo = findSiftTodo(data, id);
 
 	if (!todo) {
 		jsonErr(`Todo not found: ${id}`, "NOT_FOUND");
 	}
 
 	if (dryRun) {
-		jsonOut(
-			{
-				action: "star",
-				dryRun: true,
-				id: todo.id,
-				summary: todo.summary,
-				wouldDo: ["Star email in Gmail"],
-			},
-			flags,
-		);
+		jsonOut(previewTodoAction("star", todo), flags);
 		return;
 	}
 
-	jsonOut(executeStar(todo, data.clients), flags);
+	jsonOut(await runTodoAction("star", todo, data), flags);
 }
 
 async function cmdEmailRemind(
@@ -1294,38 +1266,19 @@ async function cmdEmailRemind(
 ): Promise<void> {
 	const { id } = await resolveIdInput(args, flags);
 	const dryRun = flags.has("dry-run");
-	const data = await fetchAndAnalyze();
-	const allTodos = [...data.active, ...data.backlog];
-	const todo = findTodoById(allTodos, id);
+	const data = await loadSiftData();
+	const todo = findSiftTodo(data, id);
 
 	if (!todo) {
 		jsonErr(`Todo not found: ${id}`, "NOT_FOUND");
 	}
 
 	if (dryRun) {
-		const config = loadConfig();
-		const taskBackend = getTaskBackend(config);
-		jsonOut(
-			{
-				action: "remind",
-				backend: taskBackend,
-				dryRun: true,
-				id: todo.id,
-				summary: todo.summary,
-				wouldDo: [
-					"Fetch email thread for context",
-					"Generate reminder title with Claude",
-					taskBackend === "things"
-						? "Create Things to-do"
-						: "Create Apple Reminder",
-				],
-			},
-			flags,
-		);
+		jsonOut(previewTodoAction("remind", todo), flags);
 		return;
 	}
 
-	jsonOut(await executeRemind(todo, data.clients), flags);
+	jsonOut(await runTodoAction("remind", todo, data), flags);
 }
 
 async function cmdOpen(
@@ -1333,15 +1286,14 @@ async function cmdOpen(
 	flags: Map<string, string | true>,
 ): Promise<void> {
 	const { id } = await resolveIdInput(args, flags);
-	const data = await fetchAndAnalyze();
-	const allTodos = [...data.active, ...data.backlog];
-	const todo = findTodoById(allTodos, id);
+	const data = await loadSiftData();
+	const todo = findSiftTodo(data, id);
 
 	if (!todo) {
 		jsonErr(`Todo not found: ${id}`, "NOT_FOUND");
 	}
 
-	const result = executeOpen(todo, data.clients);
+	const result = await runTodoAction("open", todo, data);
 	if (result.success && result.error) {
 		jsonOut(
 			{ action: "open", id: todo.id, success: true, url: result.error },
@@ -1354,41 +1306,7 @@ async function cmdOpen(
 }
 
 function cmdStatus(flags: Map<string, string | true>): void {
-	const hasConfig = configExists();
-	const config = hasConfig ? loadConfig() : null;
-	const gogAvailable = isGogAvailable();
-	const goplacesAvailable = isGoPlacesAvailable();
-	const taskBackend = getTaskBackend(config);
-	const accounts = hasConfig ? getAccounts() : [];
-	const groups = hasConfig ? getAccountGroupsList() : [];
-	const cacheStats = getCacheStats();
-
-	shapeObjectOutput(
-		{
-			accounts: accounts.map((account) => ({
-				email: account.email,
-				group: account.group,
-				name: account.name,
-			})),
-			cache: {
-				oldestAnalysis: cacheStats.oldestAnalysis,
-				todosCount: cacheStats.todosCount,
-				totalCached: cacheStats.totalCached,
-			},
-			config: hasConfig,
-			gogAvailable,
-			googlePlacesConfigured: isGooglePlacesConfigured(),
-			groups,
-			goplacesAvailable,
-			preferClaudeCli: config?.preferClaudeCli ?? false,
-			securityPosture:
-				"The agent is not a trusted operator. Validate IDs, prefer dry-run for mutations, and use fields or pagination to reduce context waste.",
-			taskBackend,
-			thingsAvailable: isThingsAvailable(),
-		},
-		flags,
-		STATUS_FIELDS,
-	);
+	shapeObjectOutput(getSiftStatus(), flags, STATUS_FIELDS);
 }
 
 async function cmdRefresh(flags: Map<string, string | true>): Promise<void> {
@@ -1408,12 +1326,7 @@ async function cmdRefresh(flags: Map<string, string | true>): Promise<void> {
 		return;
 	}
 
-	clearCache();
-	process.stderr.write(
-		`${JSON.stringify({ progress: { step: 0, message: "Cache cleared" } })}\n`,
-	);
-
-	const data = await fetchAndAnalyze((step, message, detail) => {
+	const result = await refreshSiftData((step, message, detail) => {
 		process.stderr.write(
 			`${JSON.stringify({ progress: { step, message, detail } })}\n`,
 		);
@@ -1421,9 +1334,7 @@ async function cmdRefresh(flags: Map<string, string | true>): Promise<void> {
 
 	jsonOut(
 		{
-			activeCount: data.active.length,
-			backlogCount: data.backlog.length,
-			groups: data.groups,
+			...result,
 			refreshed: true,
 		},
 		flags,

@@ -48,7 +48,7 @@ export type ProgressCallback = (
 // --- Validation ---
 
 /** Check that config, gog, and optional remindctl are available. */
-export function validateEnvironment(): {
+function validateEnvironment(): {
 	config: SiftConfig;
 	error: string | null;
 } {

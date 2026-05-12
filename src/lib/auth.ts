@@ -20,8 +20,6 @@ export function getAccountGroupsList(): string[] {
 	return config ? getAccountGroups(config) : [];
 }
 
-export type AccountGroup = string;
-
 /**
  * Check if gog CLI is available and has the account authenticated
  */
@@ -44,22 +42,3 @@ export async function checkGogAuth(accountEmail: string): Promise<boolean> {
 /**
  * Check all configured accounts are authenticated with gog
  */
-export async function checkAllAccountsAuth(): Promise<{
-	authenticated: string[];
-	missing: string[];
-}> {
-	const accounts = getAccounts();
-	const authenticated: string[] = [];
-	const missing: string[] = [];
-
-	for (const account of accounts) {
-		const isAuth = await checkGogAuth(account.email);
-		if (isAuth) {
-			authenticated.push(account.email);
-		} else {
-			missing.push(account.email);
-		}
-	}
-
-	return { authenticated, missing };
-}
