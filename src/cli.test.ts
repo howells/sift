@@ -1,65 +1,52 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseArgs, runCli } from "./cli.ts";
 
-afterEach(() => {
-	vi.restoreAllMocks();
+describe(parseArgs, () => {
+  it("supports nested domain subcommands", () => {
+    expect(parseArgs(["email", "list", "--group=personal"]).commandPath).toStrictEqual([
+      "email",
+      "list",
+    ]);
+    expect(parseArgs(["email", "done", "abc123"]).commandPath).toStrictEqual(["email", "done"]);
+  });
+
+  it("keeps legacy commands as a single command path", () => {
+    expect(parseArgs(["list", "--group=personal"]).commandPath).toStrictEqual(["list"]);
+  });
+
+  it("treats describe as a top-level command", () => {
+    expect(parseArgs(["describe", "list"]).commandPath).toStrictEqual(["describe"]);
+  });
 });
 
-describe("parseArgs", () => {
-	it("supports nested domain subcommands", () => {
-		expect(
-			parseArgs(["money", "balance", "--source=stripe"]).commandPath,
-		).toEqual(["money", "balance"]);
-		expect(
-			parseArgs(["places", "search", "coffee", "--limit=5"]).commandPath,
-		).toEqual(["places", "search"]);
-	});
+describe(runCli, () => {
+  it("prints machine-readable schemas for describe", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-	it("keeps legacy commands as a single command path", () => {
-		expect(parseArgs(["list", "--group=personal"]).commandPath).toEqual([
-			"list",
-		]);
-	});
+    await runCli(["describe", "done"]);
 
-	it("treats describe as a top-level command", () => {
-		expect(parseArgs(["describe", "remind.add"]).commandPath).toEqual([
-			"describe",
-		]);
-	});
-});
+    const output = stdout.mock.calls.map(([chunk]) => String(chunk)).join("");
+    const parsed = JSON.parse(output.trim()) as {
+      command: string;
+      schema: { kind: string };
+    };
 
-describe("runCli", () => {
-	it("prints machine-readable schemas for describe", async () => {
-		const stdout = vi
-			.spyOn(process.stdout, "write")
-			.mockImplementation(() => true);
+    expect(parsed.command).toBe("done");
+    expect(parsed.schema.kind).toBe("write");
+  });
 
-		await runCli(["describe", "remind.add"]);
+  it("describes list as a read command", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-		const output = stdout.mock.calls.map(([chunk]) => String(chunk)).join("");
-		const parsed = JSON.parse(output.trim()) as {
-			command: string;
-			schema: { kind: string };
-		};
+    await runCli(["describe", "list"]);
 
-		expect(parsed.command).toBe("remind.add");
-		expect(parsed.schema.kind).toBe("write");
-	});
+    const output = stdout.mock.calls.map(([chunk]) => String(chunk)).join("");
+    const parsed = JSON.parse(output.trim()) as {
+      command: string;
+      schema: { kind: string };
+    };
 
-	it("describes places.search as a read command", async () => {
-		const stdout = vi
-			.spyOn(process.stdout, "write")
-			.mockImplementation(() => true);
-
-		await runCli(["describe", "places.search"]);
-
-		const output = stdout.mock.calls.map(([chunk]) => String(chunk)).join("");
-		const parsed = JSON.parse(output.trim()) as {
-			command: string;
-			schema: { kind: string };
-		};
-
-		expect(parsed.command).toBe("places.search");
-		expect(parsed.schema.kind).toBe("read");
-	});
+    expect(parsed.command).toBe("list");
+    expect(parsed.schema.kind).toBe("read");
+  });
 });

@@ -1,15 +1,15 @@
 import { runCli } from "../cli.ts";
 
 export interface CommandResult {
-	exitCode: number;
-	stderr: string;
-	stdout: string;
+  exitCode: number;
+  stderr: string;
+  stdout: string;
 }
 
 class ExitInterception extends Error {
-	constructor(public code: number) {
-		super(`process.exit(${code})`);
-	}
+  constructor(public code: number) {
+    super(`process.exit(${code})`);
+  }
 }
 
 /**
@@ -24,40 +24,40 @@ class ExitInterception extends Error {
  * during the lifetime of `runCli`.
  */
 export async function runSiftCommand(argv: string[]): Promise<CommandResult> {
-	let stdout = "";
-	let stderr = "";
-	let exitCode = 0;
+  let stdout = "";
+  let stderr = "";
+  let exitCode = 0;
 
-	const origStdoutWrite = process.stdout.write.bind(process.stdout);
-	const origStderrWrite = process.stderr.write.bind(process.stderr);
-	const origExit = process.exit.bind(process);
+  const origStdoutWrite = process.stdout.write.bind(process.stdout);
+  const origStderrWrite = process.stderr.write.bind(process.stderr);
+  const origExit = process.exit.bind(process);
 
-	process.stdout.write = ((chunk: unknown) => {
-		stdout += typeof chunk === "string" ? chunk : String(chunk);
-		return true;
-	}) as typeof process.stdout.write;
+  process.stdout.write = (chunk: unknown) => {
+    stdout += typeof chunk === "string" ? chunk : String(chunk);
+    return true;
+  };
 
-	process.stderr.write = ((chunk: unknown) => {
-		stderr += typeof chunk === "string" ? chunk : String(chunk);
-		return true;
-	}) as typeof process.stderr.write;
+  process.stderr.write = (chunk: unknown) => {
+    stderr += typeof chunk === "string" ? chunk : String(chunk);
+    return true;
+  };
 
-	process.exit = ((code?: number) => {
-		exitCode = code ?? 0;
-		throw new ExitInterception(exitCode);
-	}) as typeof process.exit;
+  process.exit = (code?: number) => {
+    exitCode = code ?? 0;
+    throw new ExitInterception(exitCode);
+  };
 
-	try {
-		await runCli(argv);
-	} catch (error) {
-		if (!(error instanceof ExitInterception)) {
-			throw error;
-		}
-	} finally {
-		process.stdout.write = origStdoutWrite;
-		process.stderr.write = origStderrWrite;
-		process.exit = origExit;
-	}
+  try {
+    await runCli(argv);
+  } catch (error) {
+    if (!(error instanceof ExitInterception)) {
+      throw error;
+    }
+  } finally {
+    process.stdout.write = origStdoutWrite;
+    process.stderr.write = origStderrWrite;
+    process.exit = origExit;
+  }
 
-	return { exitCode, stderr, stdout };
+  return { exitCode, stderr, stdout };
 }

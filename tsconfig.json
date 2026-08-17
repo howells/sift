@@ -1,11 +1,11 @@
 {
-	"extends": "@howells/typescript-config/tsc-no-dom-app",
-	"compilerOptions": {
-		"declaration": true,
-		"jsx": "react-jsx",
-		"outDir": "dist",
-		"rewriteRelativeImportExtensions": true,
-		"rootDir": "src"
-	},
-	"include": ["src/**/*"]
+  "extends": "@howells/typescript-config/tsc-no-dom-app",
+  "compilerOptions": {
+    "declaration": true,
+    "jsx": "react-jsx",
+    "outDir": "dist",
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "src"
+  },
+  "include": ["src/**/*"]
 }

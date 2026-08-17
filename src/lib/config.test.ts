@@ -1,96 +1,67 @@
 import { describe, expect, it } from "vitest";
-import {
-	getAccountGroups,
-	getTaskBackend,
-	type SiftConfig,
-	validateConfig,
-} from "./config.ts";
+import { getAccountGroups, isModelConfigured, validateConfig } from "./config.ts";
+import type { SiftConfig } from "./config.ts";
 
-describe("getAccountGroups", () => {
-	it("returns unique groups from accounts", () => {
-		const config: SiftConfig = {
-			accounts: [
-				{ name: "personal", email: "me@gmail.com", group: "personal" },
-				{ name: "work", email: "me@work.com", group: "work" },
-				{ name: "side", email: "me@side.com", group: "work" },
-			],
-		};
+describe(getAccountGroups, () => {
+  it("returns unique groups from accounts", () => {
+    const config: SiftConfig = {
+      accounts: [
+        { email: "me@gmail.com", group: "personal", name: "personal" },
+        { email: "me@work.com", group: "work", name: "work" },
+        { email: "me@side.com", group: "work", name: "side" },
+      ],
+    };
 
-		const groups = getAccountGroups(config);
-		expect(groups).toHaveLength(2);
-		expect(groups).toContain("personal");
-		expect(groups).toContain("work");
-	});
+    const groups = getAccountGroups(config);
+    expect(groups).toHaveLength(2);
+    expect(groups).toContain("personal");
+    expect(groups).toContain("work");
+  });
 
-	it("returns empty array for no accounts", () => {
-		const config: SiftConfig = { accounts: [] };
-		expect(getAccountGroups(config)).toEqual([]);
-	});
+  it("returns empty array for no accounts", () => {
+    const config: SiftConfig = { accounts: [] };
+    expect(getAccountGroups(config)).toStrictEqual([]);
+  });
 });
 
-describe("validateConfig", () => {
-	it("returns no errors for valid config", () => {
-		const config: SiftConfig = {
-			accounts: [{ name: "test", email: "test@test.com", group: "test" }],
-			anthropicApiKey: "sk-ant-xxx",
-		};
+describe(validateConfig, () => {
+  it("returns no errors for valid config", () => {
+    const config: SiftConfig = {
+      accounts: [{ email: "test@test.com", group: "test", name: "test" }],
+    };
 
-		expect(validateConfig(config)).toEqual([]);
-	});
+    expect(validateConfig(config)).toStrictEqual([]);
+  });
 
-	it("returns error when no accounts configured", () => {
-		const config: SiftConfig = { accounts: [] };
-		const errors = validateConfig(config);
-		expect(errors).toContain("No accounts configured");
-	});
+  it("returns error when no accounts configured", () => {
+    const config: SiftConfig = { accounts: [] };
+    const errors = validateConfig(config);
+    expect(errors).toContain("No accounts configured");
+  });
 
-	it("returns errors for missing account fields", () => {
-		const config: SiftConfig = {
-			accounts: [
-				{ name: "", email: "test@test.com", group: "test" },
-				{ name: "test", email: "", group: "test" },
-				{ name: "test", email: "test@test.com", group: "" },
-			],
-		};
+  it("returns errors for missing account fields", () => {
+    const config: SiftConfig = {
+      accounts: [
+        { email: "test@test.com", group: "test", name: "" },
+        { email: "", group: "test", name: "test" },
+        { email: "test@test.com", group: "", name: "test" },
+      ],
+    };
 
-		const errors = validateConfig(config);
-		expect(errors).toContain("Account missing 'name'");
-		expect(errors).toContain("Account missing 'email'");
-		expect(errors).toContain("Account missing 'group'");
-	});
+    const errors = validateConfig(config);
+    expect(errors).toContain("Account missing 'name'");
+    expect(errors).toContain("Account missing 'email'");
+    expect(errors).toContain("Account missing 'group'");
+  });
+});
 
-	it("does not require legacy Anthropic API keys", () => {
-		const config: SiftConfig = {
-			accounts: [{ name: "test", email: "test@test.com", group: "test" }],
-			preferClaudeCli: false,
-		};
+describe(isModelConfigured, () => {
+  it("is satisfied by an OpenRouter key", () => {
+    expect(isModelConfigured({ OPENROUTER_API_KEY: "sk-or-v1-test" })).toBeTruthy();
+  });
 
-		expect(validateConfig(config)).toEqual([]);
-	});
-
-	it("allows no API key when CLI is preferred", () => {
-		const config: SiftConfig = {
-			accounts: [{ name: "test", email: "test@test.com", group: "test" }],
-			preferClaudeCli: true,
-		};
-
-		expect(validateConfig(config)).toEqual([]);
-	});
-
-	it("defaults the task backend to reminders", () => {
-		const config: SiftConfig = {
-			accounts: [{ name: "test", email: "test@test.com", group: "test" }],
-		};
-
-		expect(getTaskBackend(config)).toBe("reminders");
-	});
-
-	it("supports an explicit things backend", () => {
-		const config: SiftConfig = {
-			accounts: [{ name: "test", email: "test@test.com", group: "test" }],
-			taskBackend: "things",
-		};
-
-		expect(getTaskBackend(config)).toBe("things");
-	});
+  it("rejects a missing or blank key", () => {
+    expect(isModelConfigured({})).toBeFalsy();
+    expect(isModelConfigured({ OPENROUTER_API_KEY: "  " })).toBeFalsy();
+  });
 });
