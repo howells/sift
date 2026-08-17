@@ -378,10 +378,20 @@ export class GmailClient {
     }
   }
 
-  star(messageId: string): boolean {
+  /** Star a THREAD — same id and headless caveats as unstar. */
+  star(threadId: string): boolean {
     try {
       runGog(
-        ["gmail", "thread", "modify", messageId, "--add=STARRED", this.accountFlag],
+        [
+          "gmail",
+          "thread",
+          "modify",
+          threadId,
+          "--add=STARRED",
+          "--force",
+          "--no-input",
+          this.accountFlag,
+        ],
         this.accountEmail,
       );
       return true;
@@ -390,10 +400,24 @@ export class GmailClient {
     }
   }
 
-  unstar(messageId: string): boolean {
+  /**
+   * Unstar a THREAD. `gmail thread modify` 404s on a message id, and sift used
+   * to pass one because search set threadId = id; both are now distinct and
+   * real. --force --no-input because this runs headless under the gateway.
+   */
+  unstar(threadId: string): boolean {
     try {
       runGog(
-        ["gmail", "thread", "modify", messageId, "--remove=STARRED", this.accountFlag],
+        [
+          "gmail",
+          "thread",
+          "modify",
+          threadId,
+          "--remove=STARRED",
+          "--force",
+          "--no-input",
+          this.accountFlag,
+        ],
         this.accountEmail,
       );
       return true;

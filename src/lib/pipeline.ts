@@ -180,7 +180,8 @@ export async function executeDone(
       };
     }
 
-    const unstarred = client.unstar(todo.emailId);
+    // Thread id, not message id: gmail thread modify 404s on the latter.
+    const unstarred = client.unstar(todo.threadId ?? todo.emailId);
 
     if (unstarred) {
       removeCachedAnalysis(todo.emailId);
@@ -218,7 +219,7 @@ export function executeStar(todo: Todo, clients: Map<string, GmailClient>): Acti
     };
   }
 
-  const success = client.star(todo.emailId);
+  const success = client.star(todo.threadId ?? todo.emailId);
   return { action: "star", id: todo.id, success };
 }
 
