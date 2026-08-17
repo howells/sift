@@ -71,6 +71,10 @@ export function createEnvelope<TInput, TOutput>(
         fallbackModels: FALLBACK_MODELS,
         modelId,
         provider: "openrouter",
+        // Triage is classification, not reasoning. Leaving thinking on made
+        // deepseek-v4-flash spend minutes per batch reasoning before emitting
+        // anything: 8 emails took 21s, 20 took roughly five minutes.
+        reasoning: "off",
         structured: "strict",
       }),
     });

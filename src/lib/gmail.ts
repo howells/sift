@@ -5,6 +5,20 @@ import open from "open";
 const EMAIL_EXTRACT_REGEX = /<(.+?)>/;
 const EMAIL_REMOVE_REGEX = /<.+?>/;
 
+/** How much of each message body is handed to the model. */
+const SNIPPET_MAX_CHARS = 2000;
+
+const UNTRUSTED_OPEN = /<<<EXTERNAL_UNTRUSTED_CONTENT[^>]*>>>\n?(?:Source:[^\n]*\n)?(?:---\n)?/g;
+const UNTRUSTED_CLOSE = /<<<END_EXTERNAL_UNTRUSTED_CONTENT[^>]*>>>/g;
+
+/** Strip gog's --wrap-untrusted fencing, keeping the text it wraps. */
+function unwrapUntrusted(value: string | undefined): string {
+  if (!value) {
+    return "";
+  }
+  return value.replace(UNTRUSTED_OPEN, "").replace(UNTRUSTED_CLOSE, "").trim();
+}
+
 export interface Email {
   date: string;
   from: string;
@@ -31,15 +45,16 @@ export interface EmailThread {
 }
 
 interface GogSearchResult {
-  nextPageToken?: string;
-  threads: {
-    id: string;
+  messages: {
+    body?: string;
     date: string;
     from: string;
+    id: string;
+    labels?: string[];
     subject: string;
-    labels: string[];
-    messageCount: number;
+    threadId?: string;
   }[];
+  nextPageToken?: string;
 }
 
 interface GogThreadResult {
@@ -119,11 +134,22 @@ function parseGogError(stderr: string, account?: string): Error {
   return new Error(stderr);
 }
 
+/** A hung `gog` used to hang sift forever: this path had no timeout at all. */
+const GOG_TIMEOUT_MS = 120_000;
+
 async function runGogAsync(args: string[], account?: string): Promise<string> {
   return await new Promise((resolve, reject) => {
     const child = spawn("gog", args, {
       stdio: ["pipe", "pipe", "pipe"],
     });
+
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(
+        new Error(`gog timed out after ${GOG_TIMEOUT_MS / 1000}s: gog ${args[0]} ${args[1] ?? ""}`),
+      );
+    }, GOG_TIMEOUT_MS);
+    timer.unref();
 
     let stdout = "";
     let stderr = "";
@@ -137,6 +163,7 @@ async function runGogAsync(args: string[], account?: string): Promise<string> {
     });
 
     child.on("close", (code) => {
+      clearTimeout(timer);
       if (code === 0) {
         resolve(stdout);
       } else {
@@ -144,7 +171,10 @@ async function runGogAsync(args: string[], account?: string): Promise<string> {
       }
     });
 
-    child.on("error", reject);
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 
@@ -236,8 +266,23 @@ export class GmailClient {
   }
 
   async search(query: string, maxResults = 50): Promise<Email[]> {
+    // `gmail messages search` rather than `gmail search`: the latter returns
+    // subject lines only, which left the model guessing whether an email needed
+    // action from its subject alone. --wrap-untrusted is gog's own
+    // prompt-injection fencing; the markers are stripped here and the prompt
+    // states plainly that the content is untrusted.
     const output = await runGogAsync(
-      ["gmail", "search", query, `--max=${maxResults}`, "--json", this.accountFlag],
+      [
+        "gmail",
+        "messages",
+        "search",
+        query,
+        `--max=${maxResults}`,
+        "--json",
+        "--include-body",
+        "--wrap-untrusted",
+        this.accountFlag,
+      ],
       this.accountEmail,
     );
 
@@ -248,23 +293,24 @@ export class GmailClient {
       throw new Error(`Failed to parse gog search output for ${this.accountEmail}`);
     }
 
-    if (!result.threads) {
+    if (!result.messages) {
       return [];
     }
 
-    return result.threads.map((t) => {
-      const fromMatch = EMAIL_EXTRACT_REGEX.exec(t.from) || [null, t.from];
+    return result.messages.map((m) => {
+      const from = unwrapUntrusted(m.from);
+      const fromMatch = EMAIL_EXTRACT_REGEX.exec(from) || [null, from];
       return {
-        date: t.date,
-        from: t.from.replace(EMAIL_REMOVE_REGEX, "").trim() || t.from,
-        fromEmail: fromMatch[1] || t.from,
-        id: t.id,
-        isStarred: t.labels?.includes("STARRED") ?? false,
-        isUnread: t.labels?.includes("UNREAD") ?? false,
-        labels: t.labels || [],
-        snippet: "",
-        subject: t.subject || "(no subject)",
-        threadId: t.id,
+        date: m.date,
+        from: from.replace(EMAIL_REMOVE_REGEX, "").trim() || from,
+        fromEmail: fromMatch[1] || from,
+        id: m.id,
+        isStarred: m.labels?.includes("STARRED") ?? false,
+        isUnread: m.labels?.includes("UNREAD") ?? false,
+        labels: m.labels || [],
+        snippet: unwrapUntrusted(m.body).slice(0, SNIPPET_MAX_CHARS),
+        subject: unwrapUntrusted(m.subject) || "(no subject)",
+        threadId: m.threadId || m.id,
         to: "",
       };
     });
