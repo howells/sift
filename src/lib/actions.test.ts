@@ -64,6 +64,6 @@ describe(previewTodoAction, () => {
   it("describes email completion side effects", () => {
     const preview = previewTodoAction("done", todo({ emailId: "email-1" }));
 
-    expect(preview.wouldDo).toStrictEqual(["Unstar email", "Mark as read", "Remove from cache"]);
+    expect(preview.wouldDo).toStrictEqual(["Unstar email", "Remove from cache"]);
   });
 });

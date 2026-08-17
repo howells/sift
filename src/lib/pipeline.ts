@@ -158,7 +158,13 @@ export function findTodoById(todos: Todo[], id: string): Todo | undefined {
   return todos.find((t) => t.id === id || t.emailId === id || t.threadId === id);
 }
 
-/** Mark a todo as done: unstar and mark read in Gmail. */
+/**
+ * Mark a todo as done: unstar in Gmail, and nothing else.
+ *
+ * Deliberately does NOT mark the message read. Unread is a signal the user
+ * relies on separately from the star, and unstarring is the only Gmail
+ * mutation this tool is authorised to make.
+ */
 export async function executeDone(
   todo: Todo,
   clients: Map<string, GmailClient>,
@@ -174,15 +180,13 @@ export async function executeDone(
       };
     }
 
-    // Both are spawnSync-backed, so they are already resolved values.
     const unstarred = client.unstar(todo.emailId);
-    const read = client.markRead(todo.emailId);
 
-    if (unstarred && read) {
+    if (unstarred) {
       removeCachedAnalysis(todo.emailId);
     }
 
-    return { action: "done", id: todo.id, success: unstarred && read };
+    return { action: "done", id: todo.id, success: unstarred };
   }
 
   return {

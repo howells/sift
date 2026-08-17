@@ -76,7 +76,7 @@ export function previewTodoAction(
       dryRun: true,
       id: todo.id,
       summary: todo.summary,
-      wouldDo: ["Unstar email", "Mark as read", "Remove from cache"],
+      wouldDo: ["Unstar email", "Remove from cache"],
     };
   }
 
